@@ -26,7 +26,7 @@ You must have the **Open Quantum Safe (liboqs)** library installed. Because this
     ```
 4. **Configure with required flags:**
     ```
-    cmake .. -G "Visual Studio 17 2022" -A x64 -DBUILD_SHARED_LIBS=ON -DOQS_ENABLE_SIG_ALL=ON -DOQS_ENABLE_SIG_STFL_XMSS=ON -DOQS_ENABLE_SIG_STFL_LMS=ON -DOQS_HAZARDOUS_EXPERIMENTAL_ENABLE_SIG_STFL_KEY_SIG_GEN=ON
+    cmake .. -G "Visual Studio 17 2022" -A x64 -DBUILD_SHARED_LIBS=ON -DOQS_ENABLE_SIG_STFL_XMSS=ON -DOQS_ENABLE_SIG_STFL_LMS=ON -DOQS_HAZARDOUS_EXPERIMENTAL_ENABLE_SIG_STFL_KEY_SIG_GEN=ON
     ```
 5. Build the library in Release mode:
     ```cmd
@@ -52,7 +52,7 @@ You must have the **Open Quantum Safe (liboqs)** library installed. Because this
     ```
 2. **Configure with require flags:**
     ```bash
-    cmake .. -DBUILD_SHARED_LIBS=ON -DOQS_ENABLE_SIG_ALL=ON -DOQS_ENABLE_SIG_STFL_XMSS=ON -DOQS_ENABLE_SIG_STFL_LMS=ON -DOQS_HAZARDOUS_EXPERIMENTAL_ENABLE_SIG_STFL_KEY_SIG_GEN=ON
+    cmake .. -DBUILD_SHARED_LIBS=ON -DOQS_ENABLE_SIG_STFL_XMSS=ON -DOQS_ENABLE_SIG_STFL_LMS=ON -DOQS_HAZARDOUS_EXPERIMENTAL_ENABLE_SIG_STFL_KEY_SIG_GEN=ON
     ```
 3. Build and install:
     ```bash

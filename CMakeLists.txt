@@ -4,15 +4,18 @@ project(PQC_HBS_Benchmark)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
+if(UNIX)
+    list(APPEND CMAKE_PREFIX_PATH "/usr/local")
+endif()
+
 find_package(liboqs REQUIRED)
 
 if(NOT liboqs_FOUND)
-    find_package(PkgConfig REQUIRED)
-    pkg_check_modules(liboqs REQUIRED liboqs)
-
-    add_library(liboqs::liboqs INTERFACE IMPORTED)
-    target_include_directories(liboqs::liboqs INTERFACE ${liboqs_INCLUDE_DIRS})
-    target_link_libraries(liboqs::liboqs INTERFACE ${liboqs_INCLUDE_DIRS})
+    message(FATAL_ERROR
+        "\n"
+        "ERROR: liboqs not found!\n"
+        "If you not installed it please check README.md."
+    )
 endif()
 
 add_executable(benchmark src/benchmark.cpp)
