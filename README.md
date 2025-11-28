@@ -41,7 +41,7 @@ You must have the **Open Quantum Safe (liboqs)** library installed. Because this
 ### 2. Installing liboqs (Linux):
 
 **Requirements:**
-* GCC/G++, Cmake, Git, (`sudo apt install build-essential cmake libssl-dev git`)
+* GCC/G++, Cmake, Git, OpenSSL (`sudo apt install build-essential cmake libssl-dev git`)
 
 **Steps**
 1. Clone and prepare directory:
