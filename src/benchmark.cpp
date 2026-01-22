@@ -7,6 +7,7 @@
 #include <filesystem>
 
 #include <oqs/oqs.h>
+#include "sphincs.h"
 
 #ifdef _WIN32
 	#include <windows.h>
@@ -40,7 +41,8 @@ std::vector<uint8_t> read_file(const std::string& filename) {
 	return buffer;
 }
 
-struct stfl_key_storage {
+struct stfl_key_storage 
+{
 	std::vector<uint8_t> key_data;
 };
 
@@ -73,11 +75,11 @@ long get_peak_memory_kb() {
 }
 
 int main(int argc, char *argv[]) {
-	//Arguments: Algorithm name, Stateful, Mode, iterations, Baseline 
+	//Arguments: Algorithm name, Type, Mode, iterations, Baseline 
 	if (argc < 6) return 1;
 
 	std::string alg_name = argv[1];
-	bool is_stateful = std::stoi(argv[2]) == 1;
+	int algo_type = std::stoi(argv[2]); // 0 = OQS_Less, 1 = OQS_Full, 2 = Custom
 	int mode = std::stoi(argv[3]); // 0 = Keygen, 1 = Sign, 2 = Verify
 	int iterations = std::stoi(argv[4]);
 	bool use_baseline = std::stoi(argv[5]) == 1;
@@ -93,7 +95,66 @@ int main(int argc, char *argv[]) {
 	std::string sk_file = safe_name + ".sk";
 	std::string sig_file = safe_name + ".sig";
 
-	if (!is_stateful) {
+	if (algo_type == 2) {
+		SphexVariant variant;
+
+		if		(alg_name == "MY_SPHINCS-128f") variant = SphexVariant::SHAKE_128F_SIMPLE;
+		else if (alg_name == "MY_SPHINCS-128s") variant = SphexVariant::SHAKE_128S_SIMPLE;
+		else if (alg_name == "MY_SPHINCS-192f") variant = SphexVariant::SHAKE_192F_SIMPLE;
+		else if (alg_name == "MY_SPHINCS-192s") variant = SphexVariant::SHAKE_192S_SIMPLE;
+		else if (alg_name == "MY_SPHINCS-256f") variant = SphexVariant::SHAKE_256F_SIMPLE;
+		else if (alg_name == "MY_SPHINCS-256s") variant = SphexVariant::SHAKE_256S_SIMPLE;
+		else return 1;
+
+		SphincsPlus sp(variant);
+
+		if (mode == 0) { //keygen
+			std::vector<uint8_t> sk;
+			auto start = std::chrono::high_resolution_clock::now();
+			std::vector<uint8_t> pk = sp.keygen(sk);
+			auto end = std::chrono::high_resolution_clock::now();
+
+			write_file(pk_file, pk);
+			write_file(sk_file, sk);
+
+			std::cout << (double)(std::chrono::duration_cast<std::chrono::microseconds>(end - start).count()) << ","
+				<< (get_peak_memory_kb() - baseline_mem) << ","
+				<< sp.get_pk_size() << ","
+				<< sp.get_sk_size() << ","
+				<< sp.get_sig_size();
+		} else if (mode == 1) { //sign
+			std::vector<uint8_t> sk = read_file(sk_file);
+			std::vector<uint8_t> msg(100, 0);
+			std::vector<uint8_t> signature;
+			
+			auto start = std::chrono::high_resolution_clock::now();
+			for (int i = 0; i < iterations; i++) {
+				signature = sp.sign(msg, sk);
+				if (signature.empty()) {
+					std::cout << "Signature empty" << std::endl;
+				}
+			}
+			auto end = std::chrono::high_resolution_clock::now();
+
+			write_file(sig_file, signature);
+			std::cout << (double)(std::chrono::duration_cast<std::chrono::microseconds>(end - start).count()) / iterations << ","
+				<< (get_peak_memory_kb() - baseline_mem);
+		} else if (mode == 2) { //verify
+			std::vector<uint8_t> pk = read_file(pk_file);
+			std::vector<uint8_t> signature = read_file(sig_file);
+			std::vector<uint8_t> msg(100, 0);
+
+			auto start = std::chrono::high_resolution_clock::now();
+			for (int i = 0; i < iterations; i++) {
+				sp.verify(msg, signature, pk);
+			}
+			auto end = std::chrono::high_resolution_clock::now();
+
+			std::cout <<  (double)(std::chrono::duration_cast<std::chrono::microseconds>(end - start).count()) / iterations << ","
+				<< (get_peak_memory_kb() - baseline_mem);
+		}
+	}
+	else if (algo_type == 0) {
 		OQS_SIG* sig = OQS_SIG_new(alg_name.c_str());
 		if (!sig) return 1;
 
@@ -145,7 +206,7 @@ int main(int argc, char *argv[]) {
 		}
 		OQS_SIG_free(sig);
 	}
-	else {
+	else if (algo_type == 1) {
 		OQS_SIG_STFL* sig = OQS_SIG_STFL_new(alg_name.c_str());
 		if (!sig) return 1;
 

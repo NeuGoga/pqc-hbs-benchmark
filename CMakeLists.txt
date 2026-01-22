@@ -4,6 +4,8 @@ project(PQC_HBS_Benchmark)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
+add_subdirectory(libs/sphincs_lib)
+
 if(UNIX)
     find_package(OpenSSL REQUIRED)
     message(STATUS "Found OpenSSL: " ${OPENSSL_INCLUDE_DIR})
@@ -39,9 +41,15 @@ endif()
 
 add_executable(benchmark src/benchmark.cpp)
 
-target_include_directories(benchmark PRIVATE ${OQS_INCLUDE_DIR})
+target_include_directories(benchmark PRIVATE 
+    ${OQS_INCLUDE_DIR}
+    libs/sphincs_lib
+)
 
-target_link_libraries(benchmark PRIVATE ${OQS_LIBRARY})
+target_link_libraries(benchmark PRIVATE 
+    ${OQS_LIBRARY}
+    sphincs_lib
+)
 
 if(UNIX)
     target_link_libraries(benchmark PRIVATE OpenSSL::SSL OpenSSL::Crypto)

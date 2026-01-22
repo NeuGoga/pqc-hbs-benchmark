@@ -5,6 +5,19 @@ C++ Benchmarking tool for NIST Post-Quantum Hash-Based Signatures using the Open
 
 You must have the **Open Quantum Safe (liboqs)** library installed. Because this benchmark tests stateful schemes, **you must compile liboqs from source** with specific flags enabled.
 
+## Security Warning
+
+**DO NOT USE THE CUSTOM IMPLEMENTATION (`libs/sphincs_lib`) IN PRODUCTION**
+
+The custom SPHINCS+ implementation include in this project ("MY_SPHINCS") is an **educational reference implementation**
+* It is **not** constant-time (vulnerable to side-channel attacks).
+* It does **not** wipe memory securely
+* It uses a scalar implementation of Keccak (slower than AVX2)
+
+It is intended solely for benchmarking algorithmic complexity against optimized libraries like `liboqs`.
+
+---
+
 ### 1. Installing liboqs (Windows)
 
 **Requirements:**

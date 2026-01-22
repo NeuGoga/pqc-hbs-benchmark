@@ -24,6 +24,10 @@ const bool USE_BASELINE_MEMORY = true;
 const int ITERATIONS_STATELESS = 1;
 const int ITERATIONS_STATEFUL = 1;
 
+const int TYPE_OQS_STATELESS = 0;
+const int TYPE_OQS_STATEFUL = 1;
+const int TYPE_CUSTOM = 2;
+
 std::string exec(const char* cmd) {
 	std::array<char, 128> buffer;
 	std::string result;
@@ -65,6 +69,15 @@ int main() {
 		"SPHINCS+-SHA2-256f-simple"
 	};
 
+	std::vector<std::string> algorithms_mine_stateless = {
+		"MY_SPHINCS-128s",
+		"MY_SPHINCS-128f",
+		"MY_SPHINCS-192s",
+		"MY_SPHINCS-192f",
+		"MY_SPHINCS-256s",
+		"MY_SPHINCS-256f"
+	};
+
 	std::vector<std::string> algorithms_stateful = {
 		"XMSSMT-SHA2_20/2_256",
 		"XMSSMT-SHA2_20/4_256",
@@ -83,10 +96,10 @@ int main() {
 
 	std::string arg_baseline = USE_BASELINE_MEMORY ? " 1 " : " 0 ";	
 
-	auto run_suite = [&](const std::string& alg_name, bool is_stateful, int iterations) {
+	auto run_suite = [&](const std::string& alg_name, int type, int iterations) {
 		std::cout << "Benchmarking " << alg_name << "..." << std::endl;
 
-		std::string flags = is_stateful ? " 1 " : " 0 ";
+		std::string flags = " " + std::to_string(type) + " ";
 
 		//Keygen benchmarking
 		std::string cmd_kg = BENCHMARK_CMD_PREFIX + " " + alg_name + flags + "0 " + std::to_string(iterations) + " " + arg_baseline;
@@ -132,9 +145,12 @@ int main() {
 		std::remove((safe_name + ".sig").c_str());
 		};
 
-	for (const auto& alg_name : algorithms_stateless) run_suite(alg_name, false, ITERATIONS_STATELESS);
-	for (const auto& alg_name : algorithms_stateful) run_suite(alg_name, true, ITERATIONS_STATEFUL);
+	for (const auto& alg_name : algorithms_stateless) run_suite(alg_name, TYPE_OQS_STATELESS, ITERATIONS_STATELESS);
+	for (const auto& alg_name : algorithms_stateful) run_suite(alg_name, TYPE_OQS_STATEFUL, ITERATIONS_STATEFUL);
+	for (const auto& alg_name : algorithms_mine_stateless) run_suite(alg_name, TYPE_CUSTOM, ITERATIONS_STATELESS);
 
 	std::cout << "All tests finished. Results saved to " << output_filename << std::endl;
+	std::cout << "Press Enter to exit...";
+	std::cin.get();
 	return 0;
 }
