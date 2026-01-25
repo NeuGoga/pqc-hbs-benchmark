@@ -2,6 +2,7 @@
 
 #include <vector>
 #include <cstdint>
+#include <cstddef>
 #include <string>
 
 #if defined(_WIN32)
@@ -26,9 +27,13 @@ enum class SphexVariant
 class SPHINCS_API SphincsPlus
 {
 public:
-    SphincsPlus(SphexVariant variant);
+    static constexpr size_t ADDRESS_BYTES = 32;
 
+    SphincsPlus(SphexVariant variant);
     ~SphincsPlus();
+
+    SphincsPlus(const SphincsPlus&) = delete;
+    SphincsPlus& operator=(const SphincsPlus&) = delete;
 
     std::vector<uint8_t> keygen(std::vector<uint8_t> &sk_out);
 

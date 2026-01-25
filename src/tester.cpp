@@ -66,7 +66,13 @@ int main() {
 		"SPHINCS+-SHA2-192s-simple",
 		"SPHINCS+-SHA2-192f-simple",
 		"SPHINCS+-SHA2-256s-simple",
-		"SPHINCS+-SHA2-256f-simple"
+		"SPHINCS+-SHA2-256f-simple",
+		"SPHINCS+-SHAKE-128s-simple",
+		"SPHINCS+-SHAKE-128f-simple",
+		"SPHINCS+-SHAKE-192s-simple",
+		"SPHINCS+-SHAKE-192f-simple",
+		"SPHINCS+-SHAKE-256s-simple",
+		"SPHINCS+-SHAKE-256f-simple"
 	};
 
 	std::vector<std::string> algorithms_mine_stateless = {

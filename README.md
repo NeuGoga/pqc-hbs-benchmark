@@ -11,8 +11,7 @@ You must have the **Open Quantum Safe (liboqs)** library installed. Because this
 
 The custom SPHINCS+ implementation include in this project ("MY_SPHINCS") is an **educational reference implementation**
 * It uses a scalar implementation of Keccak (slower than AVX2)
-* No robust mode
-* Bit-stream Handling
+* It should be safe but I cannot guarantee
 
 It is intended solely for benchmarking algorithmic complexity against optimized libraries like `liboqs`.
 
