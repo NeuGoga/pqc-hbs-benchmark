@@ -15,6 +15,7 @@
 #else
     #include <fstream>
     #include <iostream>
+    #include <string.h>
 #endif
 
 bool generate_random_bytes(std::vector<uint8_t>& buffer) {
@@ -40,6 +41,19 @@ bool generate_random_bytes(std::vector<uint8_t>& buffer) {
     }
     return true;
 #endif
+}
+
+void secure_wipe(std::vector<uint8_t>& data) {
+    if (data.empty()) return;
+
+#ifdef _WIN32
+    SecureZeroMemory(data.data(), data.size());
+#else
+    volatile uint8_t* p = data.data();
+    size_t len = data.size();
+    while (len--) *p++ = 0;
+#endif
+    data.clear();
 }
 
 // KECCAK and SHAKE256 implementations
@@ -184,8 +198,10 @@ struct Address
     Bytes to_bytes() const {
         Bytes out(32);
         for (int i = 0; i < 8; i++) {
-            out[i * 4] = words[i] >> 24; out[i * 4 + 1] = words[i] >> 16;
-            out[i * 4 + 2] = words[i] >> 8; out[i * 4 + 3] = words[i];
+            out[i * 4 + 0] = (words[i] >> 24) & 0xFF;
+            out[i * 4 + 1] = (words[i] >> 16) & 0xFF;
+            out[i * 4 + 2] = (words[i] >> 8) & 0xFF;
+            out[i * 4 + 3] = (words[i] >> 0) & 0xFF;
         }
         return out;
     }
@@ -442,6 +458,10 @@ std::vector<uint8_t> SphincsPlus::keygen(std::vector<uint8_t>& sk_out) {
 
     Bytes pk = pub_seed;
     pk.insert(pk.end(), root.begin(), root.end());
+
+    secure_wipe(sk_seed);
+    secure_wipe(sk_prf);
+    
     return pk;
 }
 
@@ -490,6 +510,8 @@ std::vector<uint8_t> SphincsPlus::sign(const std::vector<uint8_t>& msg, const st
         Bytes sk_leaf = prf(sk_seed, fors_leaf_addr, p->N);
         signature.insert(signature.end(), sk_leaf.begin(), sk_leaf.end());
 
+        secure_wipe(sk_leaf);
+
         auto path = gen_auth_path(sk_seed, pub_seed, fors_leaf_addr, p->N, actual_fors_idx, p->A);
         for (auto& node : path) {
             signature.insert(signature.end(), node.begin(), node.end());
@@ -518,7 +540,23 @@ std::vector<uint8_t> SphincsPlus::sign(const std::vector<uint8_t>& msg, const st
 
         current_message_for_tree = compute_root(sk_seed, pub_seed, ht_addr, p->N, leaf_idx_in_tree, p->H_PRIME);
     }
+
+    secure_wipe(sk_seed);
+    secure_wipe(sk_prf);
+    secure_wipe(pk_root);
     return signature;
+}
+
+int crypto_memcp(const void *a, const void *b, size_t size) {
+    const unsigned char *p1 = (const unsigned char *)a;
+    const unsigned char *p2 = (const unsigned char *)b;
+    unsigned char result = 0;
+
+    for (size_t i = 0; i < size; i++) {
+        result |= p1[i] ^ p2[i];
+    }
+
+    return result;
 }
 
 bool SphincsPlus::verify(const std::vector<uint8_t>& msg, const std::vector<uint8_t>& sig, const std::vector<uint8_t>& pk) {
@@ -581,7 +619,7 @@ bool SphincsPlus::verify(const std::vector<uint8_t>& msg, const std::vector<uint
 
         current_root = compute_root_from_path(wots_pk, leaf_idx, path, pub_seed, tree_addr, p->N);
     }
-    return (current_root == pk_root);
+    return (crypto_memcp(current_root.data(), pk_root.data(), p->N) == 0);
 }
 
 size_t SphincsPlus::get_pk_size() const { return 2 * p->N; }
