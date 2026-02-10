@@ -99,7 +99,7 @@ private:
             uint64_t C[5], D[5];
             for (int i = 0; i < 5; i++) C[i] = state[i] ^ state[i + 5] ^ state[i + 10] ^ state[i + 15] ^ state[i + 20];
             for (int i = 0; i < 5; i++) D[i] = C[(i + 4) % 5] ^ rotl(C[(i + 1) % 5], 1);
-            for (int i = 0; i < 5; i++) state[i] ^= D[i % 5];
+            for (int i = 0; i < 25; i++) state[i] ^= D[i % 5];
 
             uint64_t current = state[1], temp;
             for (int i = 0; i < 24; i++) {
@@ -114,7 +114,7 @@ private:
                 for (int i = 0; i < 5; i++)
                     t[i] = state[j + i];
                 for (int i = 0; i < 5; i++)
-                    state[j + i] ^= (~t[(i + 5) % 5]) & t[(i + 2) % 5];
+                    state[j + i] ^= (~t[(i + 1) % 5]) & t[(i + 2) % 5];
             }
             state[0] ^= RC[round];
         }
@@ -704,7 +704,6 @@ Bytes wots_pk_from_sig(const Bytes& sig, const Bytes& msg, const Bytes& pub_seed
 
     Address pk_addr = addr;
     pk_addr.set_type(ADDR_TYPE_WOTS_PK);
-    pk_addr.set_keypair(0);
     
     return thash(pk_accum, pub_seed, pk_addr, p->N);
 }
@@ -908,6 +907,7 @@ bool SphincsPlus::verify(const std::vector<uint8_t>& msg, const std::vector<uint
         Address ht_addr;
         ht_addr.set_layer(i);
         ht_addr.set_tree(tree_idx);
+        ht_addr.set_keypair(leaf_idx);
 
         size_t wots_len = p->WOTS_LEN * p->N;
         if (sig_offset + wots_len > sig.size()) return false;
