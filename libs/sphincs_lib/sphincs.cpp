@@ -926,7 +926,7 @@ bool SphincsPlus::verify(const std::vector<uint8_t>& msg, const std::vector<uint
         }
 
         Address tree_addr = ht_addr;
-        tree_addr.set_type(ADDR_TYPE_TREE);
+        tree_addr.sanitize_for_role(ADDR_TYPE_TREE);
 
         current_root = compute_root_from_path(wots_pk, leaf_idx, path, pub_seed, tree_addr, p->N);
 
