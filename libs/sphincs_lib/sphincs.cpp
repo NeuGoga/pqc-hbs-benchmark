@@ -355,6 +355,9 @@ Bytes wots_pkgen(const Bytes& sk_seed, const Bytes& pub_seed, Address addr, Sphi
         secure_wipe(sk);
     }
 
+    addr.set_chain(0);
+    addr.set_hash(0);
+
     uint32_t original_keypair = addr.words[4];
     addr.set_type(ADDR_TYPE_WOTS_PK);
     addr.set_keypair(original_keypair);
@@ -704,6 +707,9 @@ Bytes wots_pk_from_sig(const Bytes& sig, const Bytes& msg, const Bytes& pub_seed
 
     Address pk_addr = addr;
     pk_addr.set_type(ADDR_TYPE_WOTS_PK);
+
+    pk_addr.set_chain(0);
+    pk_addr.set_hash(0);
     
     return thash(pk_accum, pub_seed, pk_addr, p->N);
 }
@@ -907,7 +913,10 @@ bool SphincsPlus::verify(const std::vector<uint8_t>& msg, const std::vector<uint
         Address ht_addr;
         ht_addr.set_layer(i);
         ht_addr.set_tree(tree_idx);
-        ht_addr.set_keypair(leaf_idx);
+
+        Address wots_addr = ht_addr;
+        wots_addr.set_type(ADDR_TYPE_WOTS);
+        wots_addr.set_keypair(leaf_idx);
 
         size_t wots_len = p->WOTS_LEN * p->N;
         if (sig_offset + wots_len > sig.size()) return false;
@@ -915,7 +924,7 @@ bool SphincsPlus::verify(const std::vector<uint8_t>& msg, const std::vector<uint
         Bytes wots_sig(sig.begin() + sig_offset, sig.begin() + sig_offset + wots_len);
         sig_offset += wots_len;
 
-        Bytes wots_pk = wots_pk_from_sig(wots_sig, current_root, pub_seed, ht_addr, p);
+        Bytes wots_pk = wots_pk_from_sig(wots_sig, current_root, pub_seed, wots_addr, p);
 
         std::vector<Bytes> path;
         for (int j = 0; j < p->H_PRIME; j++) {
