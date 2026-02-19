@@ -356,7 +356,7 @@ Bytes wots_chain(const Bytes& in, int start, int steps, const Bytes& pub_seed, A
 }
 
 Bytes wots_pkgen(const Bytes& sk_seed, const Bytes& pub_seed, Address addr, SphincsPlus::Params* p) {
-    addr.set_type(ADDR_TYPE_WOTS);
+    addr.sanitize_for_role(ADDR_TYPE_WOTS);
     addr.set_hash(0);
 
     Bytes pk_accum;
@@ -627,7 +627,7 @@ Bytes fors_pk_from_sig(const Bytes& sig, size_t& sig_offset, const Bytes& msg_di
     }
     Address root_addr = addr;
     root_addr.set_type(ADDR_TYPE_FORS_PK);
-    root_addr.set_keypair(0);
+    root_addr.set_keypair(addr.words[5]);
     return thash(fors_pk_values, pub_seed, root_addr, p->N);
 }
 
@@ -763,7 +763,7 @@ Bytes wots_pk_from_sig(const Bytes& sig, const Bytes& msg, const Bytes& pub_seed
 
     Address pk_addr = addr;
     pk_addr.set_type(ADDR_TYPE_WOTS_PK);
-
+    pk_addr.set_keypair(addr.words[5]);
     pk_addr.set_chain(0);
     pk_addr.set_hash(0);
     
@@ -876,7 +876,7 @@ std::vector<uint8_t> SphincsPlus::sign(const std::vector<uint8_t>& msg, const st
         signature.insert(signature.end(), sk_leaf.begin(), sk_leaf.end());
 
         Address leaf_addr = fors_addr;
-        leaf_addr.set_type(ADDR_TYPE_FORS_TREE);
+        leaf_addr.sanitize_for_role(ADDR_TYPE_FORS_TREE);
         leaf_addr.set_tree_height(0);
         leaf_addr.set_tree_index(global_fors_idx);
 
