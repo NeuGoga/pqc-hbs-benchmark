@@ -364,6 +364,8 @@ Bytes wots_pkgen(const Bytes& sk_seed, const Bytes& pub_seed, Address addr, Sphi
     pk_accum.reserve(p->WOTS_LEN * p->N);
 
     for (int i = 0; i < p->WOTS_LEN; i++) {
+        addr.set_chain(i);
+
         Address prf_addr = addr;
         prf_addr.set_type(ADDR_TYPE_WOTS_PRF);
         prf_addr.set_keypair(addr.words[5]);
@@ -706,6 +708,8 @@ Bytes wots_sign(const Bytes& msg, const Bytes& sk_seed, const Bytes& pub_seed,
     sig.reserve(p->WOTS_LEN * p->N); //pre-allocate
 
     for (int i = 0; i < p->WOTS_LEN; i++) {
+        addr.set_chain(i);
+        
         Address prf_addr = addr;
         prf_addr.set_type(ADDR_TYPE_WOTS_PRF);
         prf_addr.set_keypair(addr.words[5]);
