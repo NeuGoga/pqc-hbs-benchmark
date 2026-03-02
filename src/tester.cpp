@@ -87,7 +87,7 @@ int main() {
 	std::vector<std::string> algorithms_stateful = {
 		"XMSSMT-SHA2_20/2_256",
 		"XMSSMT-SHA2_20/4_256",
-		"LMS_SHA256_H5_W1"
+		"LMS_SHA256_H25_W8"
 	};
 
 	const std::string output_filename = "results.csv";
