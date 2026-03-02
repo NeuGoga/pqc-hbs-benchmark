@@ -87,7 +87,7 @@ It is intended solely for benchmarking algorithmic complexity against optimized 
     cmake .. -DCMAKE_PREFIX_PATH="C:\path\to\liboqs"
     cmake --build . --config Release
     ```
-4. **Important:** Copy the `oqs.dll` file from your `liboqs/build/bin/Release` folder into this project's `build/Release` folder so the executable can find it.
+4. **Important:** Copy the `oqs.dll` file from your `liboqs/build/bin/Release` folder into this project's `build/Release` folder so the executable can find it. Also, copy sphincs_lib.dll from `build/libs/sphincs_lib` into the same folder.
 
 ### Linux
 

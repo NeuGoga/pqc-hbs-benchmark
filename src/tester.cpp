@@ -21,8 +21,8 @@
 #endif
 
 const bool USE_BASELINE_MEMORY = true;
-const int ITERATIONS_STATELESS = 1;
-const int ITERATIONS_STATEFUL = 1;
+const int ITERATIONS_STATELESS = 100;
+const int ITERATIONS_STATEFUL = 1000;
 
 const int TYPE_OQS_STATELESS = 0;
 const int TYPE_OQS_STATEFUL = 1;
@@ -61,18 +61,18 @@ std::vector<std::string> split_string(const std::string& s, char delimeter) {
 
 int main() {
 	std::vector<std::string> algorithms_stateless = {
-		"SPHINCS+-SHA2-128s-simple",
-		"SPHINCS+-SHA2-128f-simple",
-		"SPHINCS+-SHA2-192s-simple",
-		"SPHINCS+-SHA2-192f-simple",
-		"SPHINCS+-SHA2-256s-simple",
-		"SPHINCS+-SHA2-256f-simple",
-		"SPHINCS+-SHAKE-128s-simple",
-		"SPHINCS+-SHAKE-128f-simple",
-		"SPHINCS+-SHAKE-192s-simple",
-		"SPHINCS+-SHAKE-192f-simple",
-		"SPHINCS+-SHAKE-256s-simple",
-		"SPHINCS+-SHAKE-256f-simple"
+		"SLH_DSA_PURE_SHA2_128S",
+		"SLH_DSA_PURE_SHA2_128F",
+		"SLH_DSA_PURE_SHA2_192S",
+		"SLH_DSA_PURE_SHA2_192F",
+		"SLH_DSA_PURE_SHA2_256S",
+		"SLH_DSA_PURE_SHA2_256F",
+		"SLH_DSA_PURE_SHAKE_128S",
+		"SLH_DSA_PURE_SHAKE_128F",
+		"SLH_DSA_PURE_SHAKE_192S",
+		"SLH_DSA_PURE_SHAKE_192F",
+		"SLH_DSA_PURE_SHAKE_256S",
+		"SLH_DSA_PURE_SHAKE_256F"
 	};
 
 	std::vector<std::string> algorithms_mine_stateless = {
