@@ -1,3 +1,4 @@
+#define NOMINMAX
 #include "sphincs.h"
 #include <iostream>
 #include <vector>
@@ -146,11 +147,29 @@ public:
         buf_off = 0;
     }
 
+    Keccak(const Keccak &other)
+    {
+        std::memcpy(state, other.state, sizeof(state));
+        std::memcpy(buffer, other.buffer, sizeof(buffer));
+        buf_off = other.buf_off;
+    }
+
     void absorb(const std::vector<uint8_t> &in)
     {
-        for (uint8_t b : in)
+        if (!in.empty())
+            absorb(in.data(), in.size());
+    }
+
+    void absorb(const uint8_t *in, size_t len)
+    {
+        size_t in_off = 0;
+        while (in_off < len)
         {
-            buffer[buf_off++] = b;
+            size_t chunk = std::min(len - in_off, (size_t)(rate - buf_off));
+            std::memcpy(buffer + buf_off, in + in_off, chunk);
+            buf_off += chunk;
+            in_off += chunk;
+
             if (buf_off == rate)
             {
                 for (int i = 0; i < rate / 8; i++)
@@ -168,6 +187,12 @@ public:
 
     void finalize_and_squeeze(std::vector<uint8_t> &out)
     {
+        if (!out.empty())
+            finalize_and_squeeze(out.data(), out.size());
+    }
+
+    void finalize_and_squeeze(uint8_t *out, size_t out_len)
+    {
         buffer[buf_off++] = 0x1F;
         while (buf_off < rate)
             buffer[buf_off++] = 0;
@@ -182,12 +207,11 @@ public:
         }
         keccak_f1600();
 
-        size_t out_len = out.size();
         size_t out_off = 0;
 
         while (out_len > 0)
         {
-            size_t chunk = (out_len < (size_t)rate) ? out_len : (size_t)rate;
+            size_t chunk = std::min(out_len, (size_t)rate);
             for (size_t i = 0; i < chunk; i++)
             {
                 out[out_off + i] = (uint8_t)((state[i / 8] >> (8 * (i % 8))) & 0xFF);
@@ -377,6 +401,19 @@ struct Address
         }
         return out;
     }
+
+    void absorb_into(Keccak &k) const
+    {
+        uint8_t temp[32];
+        for (int i = 0; i < 8; i++)
+        {
+            temp[i * 4 + 0] = (words[i] >> 24) & 0xFF;
+            temp[i * 4 + 1] = (words[i] >> 16) & 0xFF;
+            temp[i * 4 + 2] = (words[i] >> 8) & 0xFF;
+            temp[i * 4 + 3] = (words[i] >> 0) & 0xFF;
+        }
+        k.absorb(temp, 32);
+    }
 };
 
 /* This function takes in a byte vector and reads
@@ -418,15 +455,12 @@ uint32_t extract_fors_idx(const std::vector<uint8_t> &msg, int idx, int a)
  *  and hashes them together with public key using Keccak.
  *  It returns randomized output of N bytes.
  */
-Bytes thash(const Bytes &in, const Bytes &pub_seed, const Address &addr, int N)
+void thash(const Keccak &state_seeded, const uint8_t *in, size_t in_len, const Address &addr, int N, uint8_t *out)
 {
-    Keccak k;
-    k.absorb(pub_seed);
-    k.absorb(addr.to_bytes());
-    k.absorb(in);
-    Bytes out(N);
-    k.finalize_and_squeeze(out);
-    return out;
+    Keccak k = state_seeded;
+    addr.absorb_into(k);
+    k.absorb(in, in_len);
+    k.finalize_and_squeeze(out, N);
 }
 
 /*  This function takes secret key seed, public key seed,
@@ -434,15 +468,12 @@ Bytes thash(const Bytes &in, const Bytes &pub_seed, const Address &addr, int N)
  *   It is used to deteremenistically generate teh secret key material
  *   for the WOTS+ and FORS leaves without storing them.
  */
-Bytes prf(const Bytes &pub_seed, const Bytes &sk_seed, const Address &addr, int N)
+void prf(const Keccak &state_seeded, const uint8_t *sk_seed, const Address &addr, int N, uint8_t *out)
 {
-    Keccak k;
-    k.absorb(pub_seed);
-    k.absorb(addr.to_bytes());
-    k.absorb(sk_seed);
-    Bytes out(N);
-    k.finalize_and_squeeze(out);
-    return out;
+    Keccak k = state_seeded;
+    addr.absorb_into(k);
+    k.absorb(sk_seed, N);
+    k.finalize_and_squeeze(out, N);
 }
 
 /* This function takes secret PRF key, a randomizer, and the
@@ -466,29 +497,28 @@ Bytes prf_msg(const Bytes &sk_prf, const Bytes &optrand, const Bytes &msg, int N
  *   It increments the Address hash index on every step so that
  *   every hash in the chain is bound to a specific position.
  */
-Bytes gen_chain(Bytes in, int start, int steps, const Bytes &pub_seed, Address addr, int N)
+void gen_chain(const Keccak &state_seeded, const uint8_t *in, int start, int steps, Address addr, int N, uint8_t *out)
 {
+    std::memcpy(out, in, N);
     for (int i = start; i < start + steps; i++)
     {
         addr.set_hash(i);
-        in = thash(in, pub_seed, addr, N);
+        thash(state_seeded, out, N, addr, N, out);
     }
-    return in;
 }
 
 /*  This function used in WOTS+ verification.
  *   It hashes the input byte vector and hashes it for the number
  *   of steps.
  */
-Bytes wots_chain(const Bytes &in, int start, int steps, const Bytes &pub_seed, Address &addr, int N)
+void wots_chain(const Keccak &state_seeded, const uint8_t *in, int start, int steps, Address &addr, int N, uint8_t *out)
 {
-    Bytes out = in;
+    std::memcpy(out, in, N);
     for (int i = start; i < start + steps; i++)
     {
         addr.set_hash(i);
-        out = thash(out, pub_seed, addr, N);
+        thash(state_seeded, out, N, addr, N, out);
     }
-    return out;
 }
 
 /*  This function genereates a WOTS+ public key.
@@ -498,12 +528,13 @@ Bytes wots_chain(const Bytes &in, int start, int steps, const Bytes &pub_seed, A
  */
 Bytes wots_pkgen(const Bytes &sk_seed, const Bytes &pub_seed, Address addr, SphincsPlus::Params *p)
 {
+    Keccak state_seeded;
+    state_seeded.absorb(pub_seed.data(), pub_seed.size());
+
     addr.sanitize_for_role(ADDR_TYPE_WOTS);
     addr.set_hash(0);
 
-    Bytes pk_accum;
-
-    pk_accum.reserve(p->WOTS_LEN * p->N);
+    Bytes pk_accum(p->WOTS_LEN * p->N);
 
     for (int i = 0; i < p->WOTS_LEN; i++)
     {
@@ -515,11 +546,11 @@ Bytes wots_pkgen(const Bytes &sk_seed, const Bytes &pub_seed, Address addr, Sphi
         prf_addr.set_chain(i);
         prf_addr.set_hash(0);
 
-        Bytes sk = prf(pub_seed, sk_seed, prf_addr, p->N);
+        Bytes sk(p->N);
 
-        Bytes leaf = gen_chain(sk, 0, p->W - 1, pub_seed, addr, p->N);
+        prf(state_seeded, sk_seed.data(), prf_addr, p->N, sk.data());
 
-        pk_accum.insert(pk_accum.end(), leaf.begin(), leaf.end());
+        gen_chain(state_seeded, sk.data(), 0, p->W - 1, addr, p->N, pk_accum.data() + i * p->N);
 
         secure_wipe(sk);
     }
@@ -531,7 +562,9 @@ Bytes wots_pkgen(const Bytes &sk_seed, const Bytes &pub_seed, Address addr, Sphi
     addr.set_type(ADDR_TYPE_WOTS_PK);
     addr.set_keypair(original_keypair);
 
-    return thash(pk_accum, pub_seed, addr, p->N);
+    Bytes pk(p->N);
+    thash(state_seeded, pk_accum.data(), pk_accum.size(), addr, p->N, pk.data());
+    return pk;
 }
 
 struct StackNodeAuth
@@ -560,6 +593,9 @@ Bytes treehash_authpath(const Bytes &sk_seed, const Bytes &pub_seed, Address add
         auth_path->assign(tree_height, Bytes(N, 0));
     }
 
+    Keccak state_seeded;
+    state_seeded.absorb(pub_seed.data(), pub_seed.size());
+
     for (uint32_t i = 0; i < leaves; ++i)
     {
         uint32_t idx = start_idx + i;
@@ -569,7 +605,7 @@ Bytes treehash_authpath(const Bytes &sk_seed, const Bytes &pub_seed, Address add
         leaf_addr.set_tree_height(0);
         leaf_addr.set_tree_index(idx);
 
-        Bytes node;
+        Bytes node(N);
         if (addr.words[4] == ADDR_TYPE_TREE)
         {
             Address wots_addr = leaf_addr;
@@ -585,8 +621,9 @@ Bytes treehash_authpath(const Bytes &sk_seed, const Bytes &pub_seed, Address add
             prf_addr.set_tree_height(0);
             prf_addr.set_tree_index(idx);
 
-            Bytes sk_leaf = prf(pub_seed, sk_seed, prf_addr, N);
-            node = thash(sk_leaf, pub_seed, leaf_addr, N);
+            Bytes sk_leaf(N);
+            prf(state_seeded, sk_seed.data(), prf_addr, N, sk_leaf.data());
+            thash(state_seeded, sk_leaf.data(), N, leaf_addr, N, node.data());
             secure_wipe(sk_leaf);
         }
 
@@ -617,9 +654,12 @@ Bytes treehash_authpath(const Bytes &sk_seed, const Bytes &pub_seed, Address add
             parent_addr.set_tree_height(left.height + 1);
             parent_addr.set_tree_index(left.start_idx >> (left.height + 1));
 
-            Bytes combined = left.node;
-            combined.insert(combined.end(), right.node.begin(), right.node.end());
-            Bytes parent = thash(combined, pub_seed, parent_addr, N);
+            Bytes combined(2 * N);
+            std::memcpy(combined.data(), left.node.data(), N);
+            std::memcpy(combined.data() + N, right.node.data(), N);
+
+            Bytes parent(N);
+            thash(state_seeded, combined.data(), 2 * N, parent_addr, N, parent.data());
 
             cur.node = parent;
             cur.height = left.height + 1;
@@ -651,15 +691,17 @@ Bytes compute_root(const Bytes &sk_seed, const Bytes &pub_seed, Address addr,
     stack.reserve(height + 1);
 
     uint32_t leaves = 1 << height;
-
     bool is_hypertree = (addr.words[4] == ADDR_TYPE_TREE);
+
+    Keccak state_seeded;
+    state_seeded.absorb(pub_seed.data(), pub_seed.size());
 
     for (uint32_t i = 0; i < leaves; i++)
     {
         Address leaf_addr = addr;
         uint32_t current_idx = idx_offset + i;
 
-        Bytes node;
+        Bytes node(N);
 
         if (is_hypertree)
         {
@@ -677,9 +719,9 @@ Bytes compute_root(const Bytes &sk_seed, const Bytes &pub_seed, Address addr,
             prf_addr.set_tree_height(0);
             prf_addr.set_tree_index(current_idx);
 
-            Bytes sk_leaf = prf(pub_seed, sk_seed, prf_addr, N);
-
-            node = thash(sk_leaf, pub_seed, leaf_addr, N);
+            Bytes sk_leaf(N);
+            prf(state_seeded, sk_seed.data(), prf_addr, N, sk_leaf.data());
+            thash(state_seeded, sk_leaf.data(), N, leaf_addr, N, node.data());
             secure_wipe(sk_leaf);
         }
 
@@ -695,10 +737,12 @@ Bytes compute_root(const Bytes &sk_seed, const Bytes &pub_seed, Address addr,
             parent_addr.set_tree_height(h + 1);
             parent_addr.set_tree_index(current_idx >> (h + 1));
 
-            Bytes combined = left;
-            combined.insert(combined.end(), right.begin(), right.end());
+            Bytes combined(2 * N);
+            std::memcpy(combined.data(), left.data(), N);
+            std::memcpy(combined.data() + N, right.data(), N);
 
-            node = thash(combined, pub_seed, parent_addr, N);
+            node.assign(N, 0);
+            thash(state_seeded, combined.data(), 2 * N, parent_addr, N, node.data());
             h++;
         }
         stack.push_back({node, h});
@@ -715,27 +759,28 @@ Bytes compute_root_from_path(const Bytes &leaf, uint32_t leaf_idx, const std::ve
                              const Bytes &pub_seed, Address addr, int N)
 {
     Bytes current_node = leaf;
+    Bytes combined(2 * N);
+
+    Keccak state_seeded;
+    state_seeded.absorb(pub_seed.data(), pub_seed.size());
 
     for (size_t h = 0; h < auth_path.size(); ++h)
     {
         addr.set_tree_height(h + 1);
         addr.set_tree_index(leaf_idx >> 1);
 
-        Bytes left, right;
         if (leaf_idx & 1)
         {
-            left = auth_path[h];
-            right = current_node;
+            std::memcpy(combined.data(), auth_path[h].data(), N);
+            std::memcpy(combined.data() + N, current_node.data(), N);
         }
         else
         {
-            left = current_node;
-            right = auth_path[h];
+            std::memcpy(combined.data(), current_node.data(), N);
+            std::memcpy(combined.data() + N, auth_path[h].data(), N);
         }
 
-        Bytes combined = left;
-        combined.insert(combined.end(), right.begin(), right.end());
-        current_node = thash(combined, pub_seed, addr, N);
+        thash(state_seeded, combined.data(), 2 * N, addr, N, current_node.data());
 
         leaf_idx >>= 1;
     }
@@ -814,7 +859,11 @@ Bytes fors_pk_from_sig(const Bytes &sig, size_t &sig_offset, const Bytes &msg_di
         leaf_addr.set_tree_height(0);
         leaf_addr.set_tree_index(global_fors_idx);
 
-        Bytes leaf = thash(sk, pub_seed, leaf_addr, p->N);
+        Keccak state_seeded;
+        state_seeded.absorb(pub_seed.data(), pub_seed.size());
+
+        Bytes leaf(p->N);
+        thash(state_seeded, sk.data(), p->N, leaf_addr, p->N, leaf.data());
 
         std::vector<Bytes> path;
         for (int j = 0; j < p->A; j++)
@@ -832,7 +881,13 @@ Bytes fors_pk_from_sig(const Bytes &sig, size_t &sig_offset, const Bytes &msg_di
     Address root_addr = addr;
     root_addr.set_type(ADDR_TYPE_FORS_PK);
     root_addr.set_keypair(addr.words[5]);
-    return thash(fors_pk_values, pub_seed, root_addr, p->N);
+
+    Keccak state_seeded_root;
+    state_seeded_root.absorb(pub_seed.data(), pub_seed.size());
+
+    Bytes root(p->N);
+    thash(state_seeded_root, fors_pk_values.data(), fors_pk_values.size(), root_addr, p->N, root.data());
+    return root;
 }
 
 /*  This function is a wrapper for treehash_authpath.
@@ -930,8 +985,10 @@ Bytes wots_sign(const Bytes &msg, const Bytes &sk_seed, const Bytes &pub_seed,
 
     addr.sanitize_for_role(ADDR_TYPE_WOTS);
 
-    Bytes sig;
-    sig.reserve(p->WOTS_LEN * p->N); // pre-allocate
+    Bytes sig(p->WOTS_LEN * p->N);
+
+    Keccak state_seeded;
+    state_seeded.absorb(pub_seed.data(), pub_seed.size());
 
     for (int i = 0; i < p->WOTS_LEN; i++)
     {
@@ -943,10 +1000,11 @@ Bytes wots_sign(const Bytes &msg, const Bytes &sk_seed, const Bytes &pub_seed,
         prf_addr.set_chain(i);
         prf_addr.set_hash(0);
 
-        Bytes sk_component = prf(pub_seed, sk_seed, prf_addr, p->N);
-        Bytes sig_part = gen_chain(sk_component, 0, lengths[i], pub_seed, addr, p->N);
+        Bytes sk_component(p->N);
+        prf(state_seeded, sk_seed.data(), prf_addr, p->N, sk_component.data());
 
-        sig.insert(sig.end(), sig_part.begin(), sig_part.end());
+        gen_chain(state_seeded, sk_component.data(), 0, lengths[i], addr, p->N, sig.data() + i * p->N);
+
         secure_wipe(sk_component);
     }
     return sig;
@@ -979,9 +1037,11 @@ Bytes wots_pk_from_sig(const Bytes &sig, const Bytes &msg, const Bytes &pub_seed
     Address wots_addr = addr;
     wots_addr.sanitize_for_role(ADDR_TYPE_WOTS);
 
-    Bytes pk_accum;
-    pk_accum.reserve(p->WOTS_LEN * p->N);
+    Bytes pk_accum(p->WOTS_LEN * p->N);
     int sig_offset = 0;
+
+    Keccak state_seeded;
+    state_seeded.absorb(pub_seed.data(), pub_seed.size());
 
     for (int i = 0; i < p->WOTS_LEN; i++)
     {
@@ -992,11 +1052,8 @@ Bytes wots_pk_from_sig(const Bytes &sig, const Bytes &msg, const Bytes &pub_seed
             throw std::runtime_error("Signature too short in wots_pk_from_sig");
         }
 
-        Bytes sig_part(sig.begin() + sig_offset, sig.begin() + sig_offset + p->N);
+        wots_chain(state_seeded, sig.data() + sig_offset, lengths[i], (p->W - 1) - lengths[i], wots_addr, p->N, pk_accum.data() + i * p->N);
         sig_offset += p->N;
-
-        Bytes leaf = wots_chain(sig_part, lengths[i], (p->W - 1) - lengths[i], pub_seed, wots_addr, p->N);
-        pk_accum.insert(pk_accum.end(), leaf.begin(), leaf.end());
     }
 
     Address pk_addr = addr;
@@ -1005,7 +1062,9 @@ Bytes wots_pk_from_sig(const Bytes &sig, const Bytes &msg, const Bytes &pub_seed
     pk_addr.set_chain(0);
     pk_addr.set_hash(0);
 
-    return thash(pk_accum, pub_seed, pk_addr, p->N);
+    Bytes pk(p->N);
+    thash(state_seeded, pk_accum.data(), pk_accum.size(), pk_addr, p->N, pk.data());
+    return pk;
 }
 
 /*  This function generates new SPHINCS+ public and secret keypair.
@@ -1115,6 +1174,9 @@ std::vector<uint8_t> SphincsPlus::sign(const std::vector<uint8_t> &msg, const st
 
     Bytes fors_pk_value;
 
+    Keccak state_seeded;
+    state_seeded.absorb(pub_seed.data(), pub_seed.size());
+
     for (int i = 0; i < p->K; i++)
     {
         uint32_t actual_fors_idx = extract_fors_idx(msg_digest_full, i, p->A);
@@ -1126,7 +1188,8 @@ std::vector<uint8_t> SphincsPlus::sign(const std::vector<uint8_t> &msg, const st
         prf_addr.set_tree_height(0);
         prf_addr.set_tree_index(global_fors_idx);
 
-        Bytes sk_leaf = prf(pub_seed, sk_seed, prf_addr, p->N);
+        Bytes sk_leaf(p->N);
+        prf(state_seeded, sk_seed.data(), prf_addr, p->N, sk_leaf.data());
         signature.insert(signature.end(), sk_leaf.begin(), sk_leaf.end());
 
         Address leaf_addr = fors_addr;
@@ -1134,7 +1197,8 @@ std::vector<uint8_t> SphincsPlus::sign(const std::vector<uint8_t> &msg, const st
         leaf_addr.set_tree_height(0);
         leaf_addr.set_tree_index(global_fors_idx);
 
-        Bytes leaf = thash(sk_leaf, pub_seed, leaf_addr, p->N);
+        Bytes leaf(p->N);
+        thash(state_seeded, sk_leaf.data(), p->N, leaf_addr, p->N, leaf.data());
         secure_wipe(sk_leaf);
 
         std::vector<Bytes> path;
@@ -1153,7 +1217,8 @@ std::vector<uint8_t> SphincsPlus::sign(const std::vector<uint8_t> &msg, const st
     Address fors_pk_addr = fors_addr;
     fors_pk_addr.set_type(ADDR_TYPE_FORS_PK);
     fors_pk_addr.set_keypair(leaf_idx);
-    Bytes fors_root = thash(fors_pk_value, pub_seed, fors_pk_addr, p->N);
+    Bytes fors_root(p->N);
+    thash(state_seeded, fors_pk_value.data(), fors_pk_value.size(), fors_pk_addr, p->N, fors_root.data());
 
     // uint64_t tree_idx = get_bits_from_stream(msg_digest_full, bit_cursor, (p->H - p->H_PRIME));
     // bit_cursor += (p->H - p->H_PRIME);
