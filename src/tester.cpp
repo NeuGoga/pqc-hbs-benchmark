@@ -21,9 +21,9 @@ const std::string BENCHMARK_CMD_PREFIX = "./benchmark";
 #endif
 
 const bool USE_BASELINE_MEMORY = true;
-const int ITERATIONS_STATELESS = 5;
-const int ITERATIONS_STATEFUL = 5;
-const int ITERATIONS_STATELESS_MINE = 5;
+const int ITERATIONS_STATELESS = 100;
+const int ITERATIONS_STATEFUL = 1000;
+const int ITERATIONS_STATELESS_MINE = 100;
 const int ITERATIONS_LATTICE = 5000;
 
 const int TYPE_OQS_STATELESS = 0;
