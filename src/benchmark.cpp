@@ -358,6 +358,7 @@ int benchmark_custom(const std::string &alg_name, int mode, int iterations, long
 		std::cout << (double)(std::chrono::duration_cast<std::chrono::microseconds>(end - start).count()) / iterations << ","
 				  << (get_peak_memory_kb() - baseline_mem);
 	}
+	return 0;
 }
 
 /*	Main function.
