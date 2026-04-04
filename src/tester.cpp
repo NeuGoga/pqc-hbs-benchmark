@@ -21,9 +21,9 @@ const std::string BENCHMARK_CMD_PREFIX = "./benchmark";
 #endif
 
 const bool USE_BASELINE_MEMORY = true;
-const int ITERATIONS_STATELESS = 100;
-const int ITERATIONS_STATEFUL = 1000;
-const int ITERATIONS_STATELESS_MINE = 100;
+const int ITERATIONS_STATELESS = 5;
+const int ITERATIONS_STATEFUL = 5;
+const int ITERATIONS_STATELESS_MINE = 5;
 const int ITERATIONS_LATTICE = 5000;
 
 const int TYPE_OQS_STATELESS = 0;
@@ -212,7 +212,7 @@ int main()
 		run_suite(output_file, arg_baseline, alg_name, TYPE_CUSTOM, ITERATIONS_STATELESS_MINE);
 
 	for (const auto &alg_name : algorithms_lattice)
-		run_suite(output_file, arg_baseline, alg_name, TYPE_OQS_STATELESS, ITERATIONS_STATELESS_MINE);
+		run_suite(output_file, arg_baseline, alg_name, TYPE_OQS_STATELESS, ITERATIONS_LATTICE);
 
 	std::cout << "All tests finished. Results saved to " << output_filename << std::endl;
 	std::cout << "Press Enter to exit...";

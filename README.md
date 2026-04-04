@@ -10,10 +10,10 @@ You must have the **Open Quantum Safe (liboqs)** library installed. Because this
 **DO NOT USE THE CUSTOM IMPLEMENTATION (`libs/sphincs_lib`) IN PRODUCTION**
 
 The custom SPHINCS+ implementation include in this project ("MY_SPHINCS") is an **educational reference implementation**
-* It uses a scalar implementation of Keccak (slower than AVX2)
-* It should be safe but I cannot guarantee
+* It uses a scalar implementation of Keccak (slower than AVX2).
+* It is not safe.
 
-It is intended solely for benchmarking algorithmic complexity against optimized libraries like `liboqs`.
+It is intended solely for benchmarking.
 
 ---
 
@@ -64,13 +64,21 @@ It is intended solely for benchmarking algorithmic complexity against optimized 
     ```
 2. **Configure with require flags:**
     ```bash
-    cmake .. -DBUILD_SHARED_LIBS=ON -DOQS_ENABLE_SIG_STFL_XMSS=ON -DOQS_ENABLE_SIG_STFL_LMS=ON -DOQS_HAZARDOUS_EXPERIMENTAL_ENABLE_SIG_STFL_KEY_SIG_GEN=ON
+    cmake .. -DBUILD_SHARED_LIBS=ON \
+     -DOQS_ENABLE_SIG_STFL_XMSS=ON \
+     -DOQS_ENABLE_SIG_STFL_LMS=ON \
+     -DOQS_HAZARDOUS_EXPERIMENTAL_ENABLE_SIG_STFL_KEY_SIG_GEN=ON \
+     -DOQS_DIST_BUILD=ON \
+     -DOQS_BUILD_TYPE=Release \
+     -DCMAKE_C_FLAGS="-march=native -O3" \
+     -DCMAKE_CXX_FLAGS="-march=native -O3"
     ```
 3. Build and install:
     ```bash
     make -j4
     sudo make install
     ```
+    *Note if you do not have sudo/root access, skip `sudo make install` and take not of your `/path/to/liboqs`.
 
 ---
 
@@ -96,7 +104,7 @@ It is intended solely for benchmarking algorithmic complexity against optimized 
     ```bash
     mkdir build
     cd build
-    cmake ..
+    cmake .. -DCMAKE_BUILD_TYPE=Release -DCMAKE_PREFIX_PATH="/path/to/liboqs"
     make
     ```
 

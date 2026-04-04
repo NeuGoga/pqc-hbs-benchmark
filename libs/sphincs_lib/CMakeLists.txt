@@ -7,6 +7,12 @@ add_library(sphincs_lib SHARED sphincs.cpp)
 
 target_include_directories(sphincs_lib PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 
+if(MSVC)
+    target_compile_options(sphincs_lib PRIVATE /02 /Oi /Ob2)
+else()
+    target_compile_options(sphincs_lib PRIVATE -O3 -march=native)
+endif()
+
 if(WIN32)
     target_compile_definitions(sphincs_lib PRIVATE _WIN32)
     target_link_libraries(sphincs_lib PRIVATE bcrypt)
