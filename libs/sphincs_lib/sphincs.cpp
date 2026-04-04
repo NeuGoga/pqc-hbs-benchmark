@@ -402,6 +402,10 @@ struct Address
         return out;
     }
 
+    /*  Serializes the 8-word address directly into a Keccak state.
+     *   This uses a fast stack array to prevent heap allocations
+     *   that were slowing down before.
+     */
     void absorb_into(Keccak &k) const
     {
         uint8_t temp[32];
@@ -451,9 +455,10 @@ uint32_t extract_fors_idx(const std::vector<uint8_t> &msg, int idx, int a)
     return res;
 }
 
-/* This function takes an input byte vector and a specific Address,
- *  and hashes them together with public key using Keccak.
- *  It returns randomized output of N bytes.
+/*  This function takes an input memory buffer and a specific Address,
+ *  and hashes them together with public key using Keccak. To optimize,
+ *   it accepts a pre-seeded Keccak state and writes the N bytes output
+ *   to a provided pointer.
  */
 void thash(const Keccak &state_seeded, const uint8_t *in, size_t in_len, const Address &addr, int N, uint8_t *out)
 {
@@ -492,10 +497,10 @@ Bytes prf_msg(const Bytes &sk_prf, const Bytes &optrand, const Bytes &msg, int N
     return out;
 }
 
-/*  This function takes an input byte vector and repeatedly hashes it
+/*  This function takes an input buffer and repeatedly hashes it
  *   steps times using thash.
- *   It increments the Address hash index on every step so that
- *   every hash in the chain is bound to a specific position.
+ *   It increments the Address hash index on every step.
+ *   Write resulting chain into the out pointer.
  */
 void gen_chain(const Keccak &state_seeded, const uint8_t *in, int start, int steps, Address addr, int N, uint8_t *out)
 {
@@ -508,8 +513,9 @@ void gen_chain(const Keccak &state_seeded, const uint8_t *in, int start, int ste
 }
 
 /*  This function used in WOTS+ verification.
- *   It hashes the input byte vector and hashes it for the number
- *   of steps.
+ *   It hashes the input buffer and hashes it for the number
+ *   of steps. It increments the Address hash index on every step.
+ *   Write results into the out pointer.
  */
 void wots_chain(const Keccak &state_seeded, const uint8_t *in, int start, int steps, Address &addr, int N, uint8_t *out)
 {
