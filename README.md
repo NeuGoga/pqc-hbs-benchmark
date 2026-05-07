@@ -107,6 +107,7 @@ It is intended solely for benchmarking.
     cmake .. -DCMAKE_BUILD_TYPE=Release -DCMAKE_PREFIX_PATH="/path/to/liboqs"
     make
     ```
+3. **Important:** Copy the `oqs.dll` file from your `liboqs/build/bin/Release` folder into this project's `build/Release` folder so the executable can find it. Also, copy sphincs_lib.dll from `build/libs/sphincs_lib` into the same folder.
 
 ---
 
