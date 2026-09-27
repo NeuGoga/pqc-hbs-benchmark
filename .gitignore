@@ -12,3 +12,6 @@ Release/
 *.pk
 *.sk
 *.sig
+tests/test_hbs
+benchmark
+tester

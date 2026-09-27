@@ -7,13 +7,13 @@ You must have the **Open Quantum Safe (liboqs)** library installed. Because this
 
 ## Security Warning
 
-**DO NOT USE THE CUSTOM IMPLEMENTATION (`libs/sphincs_lib`) IN PRODUCTION**
+**DO NOT USE THE CUSTOM IMPLEMENTATION (`libs/hbs`) IN PRODUCTION**
 
-The custom SPHINCS+ implementation include in this project ("MY_SPHINCS") is an **educational reference implementation**
+The custom SPHINCS+ implementation included in this project (`MY_SPHINCS-*`) is an **educational reference implementation**
 * It uses a scalar implementation of Keccak (slower than AVX2).
 * It is not safe.
 
-It is intended solely for benchmarking.
+It is intended solely for benchmarking. It **does** match the official SPHINCS+ SHAKE-simple reference on known-answer tests (see `tests/`).
 
 ---
 
@@ -132,3 +132,36 @@ cd build/bin
 ```
 
 The results will be saved to **`results.csv`**
+
+## Custom library (libhbs)
+
+Your own schemes live in `libs/hbs`. SPHINCS+ is split so hashes, WOTS+, FORS and Merkle trees can be reused when you add XMSS/LMS.
+
+```
+libs/hbs/
+  include/hbs/hbs.h       list_schemes() / open("MY_SPHINCS-128f")
+  src/crypto/             SHAKE256, RNG
+  src/merkle/             treehash
+  src/sphincs/            address, WOTS+, FORS, sign/verify
+  src/registry.cpp        add a name here to expose a new scheme
+```
+
+Build **without** liboqs is supported: OQS schemes are skipped, custom ones still run.
+
+```
+# list whatever this binary actually contains
+./benchmark --list
+./tester --list
+```
+
+Known-answer test (official SPHINCS+ ref, SHAKE-128f-simple):
+
+```
+make test
+```
+
+CMake flags:
+
+* `-DPQC_ENABLE_CUSTOM_SPHINCS=OFF` — do not build libhbs; `MY_SPHINCS-*` are skipped instead of a link error
+* `-DPQC_REQUIRE_OQS=ON` — fail configure if liboqs is missing (default is skip)
+

@@ -1,0 +1,14 @@
+build/
+out/
+x64/
+Debug/
+Release/
+.vs/
+*.sln
+*.vcxproj
+*.user
+
+*.csv
+*.pk
+*.sk
+*.sig
