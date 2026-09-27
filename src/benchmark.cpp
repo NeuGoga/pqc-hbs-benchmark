@@ -6,15 +6,24 @@
 #include <string>
 #include <vector>
 
+#ifndef PQC_HAS_OQS
+#define PQC_HAS_OQS 0
+#endif
+#ifndef PQC_HAS_CUSTOM_SPHINCS
+#define PQC_HAS_CUSTOM_SPHINCS 0
+#endif
 
+#if PQC_HAS_CUSTOM_SPHINCS
 #include "sphincs.h"
-#include <oqs/oqs.h>
+#endif
 
+#if PQC_HAS_OQS
+#include <oqs/oqs.h>
+#endif
 
 #ifdef _WIN32
-#include <psapi.h>
 #include <windows.h>
-
+#include <psapi.h>
 #else
 #include <sys/resource.h>
 #include <unistd.h>
@@ -61,6 +70,29 @@ std::vector<uint8_t> read_file(const std::string &filename) {
   return buffer;
 }
 
+/*	This function gets the peak memory usage of the current process.
+ *	It uses Windows Process Memory Counters or Linux rusage.
+ *	Returns memory in Kilobytes.
+ */
+long get_peak_memory_kb() {
+#ifdef _WIN32
+  PROCESS_MEMORY_COUNTERS_EX pmc;
+  if (GetProcessMemoryInfo(GetCurrentProcess(), (PROCESS_MEMORY_COUNTERS *)&pmc,
+                           sizeof(pmc))) {
+    return pmc.PeakWorkingSetSize / 1024;
+  }
+  return -1;
+#else
+  struct rusage usage;
+  if (getrusage(RUSAGE_SELF, &usage) == 0) {
+    return usage.ru_maxrss;
+  }
+  return -1;
+#endif
+}
+
+#if PQC_HAS_OQS
+
 struct stfl_key_storage {
   std::vector<uint8_t> key_data;
 };
@@ -80,27 +112,6 @@ OQS_STATUS my_secure_store_sk(uint8_t *sk_buf, size_t sk_buf_len,
   storage->key_data.assign(sk_buf, sk_buf + sk_buf_len);
 
   return OQS_SUCCESS;
-}
-
-/*	This function gets the pea memory usage of the current process.
- *	It uses Windows Process Memory Counters or Linux rusage.
- *	Returns memory in Kilobytes.
- */
-long get_peak_memory_kb() {
-#ifdef _WIN32
-  PROCESS_MEMORY_COUNTERS_EX pmc;
-  if (GetProcessMemoryInfo(GetCurrentProcess(), (PROCESS_MEMORY_COUNTERS *)&pmc,
-                           sizeof(pmc))) {
-    return pmc.PeakWorkingSetSize / 1024;
-  }
-  return -1;
-#else
-  struct rusage usage;
-  if (getrusage(RUSAGE_SELF, &usage) == 0) {
-    return usage.ru_maxrss;
-  }
-  return -1;
-#endif
 }
 
 /*	This function benchmarks stateless liboqs algorithms.
@@ -282,6 +293,10 @@ int benchmark_oqs_stateful(const std::string &alg_name, int mode,
   return 0;
 }
 
+#endif // PQC_HAS_OQS
+
+#if PQC_HAS_CUSTOM_SPHINCS
+
 /*	This function benchmarks my SPHINCS+ implementation.
  *
  *	alg_name:		Name of the algorithm.
@@ -369,6 +384,8 @@ int benchmark_custom(const std::string &alg_name, int mode, int iterations,
   return 0;
 }
 
+#endif // PQC_HAS_CUSTOM_SPHINCS
+
 /*	Main function.
  *
  *	Arguments:
@@ -398,14 +415,29 @@ int main(int argc, char *argv[]) {
   std::string sig_file = safe_name + ".sig";
 
   if (algo_type == TYPE_OQS_STATELESS) {
+#if PQC_HAS_OQS
     return benchmark_oqs_stateless(alg_name, mode, iterations, baseline_mem,
                                    pk_file, sk_file, sig_file);
+#else
+    std::cerr << "OQS support not compiled in." << std::endl;
+    return 1;
+#endif
   } else if (algo_type == TYPE_OQS_STATEFUL) {
+#if PQC_HAS_OQS
     return benchmark_oqs_stateful(alg_name, mode, iterations, baseline_mem,
                                   pk_file, sk_file, sig_file);
+#else
+    std::cerr << "OQS support not compiled in." << std::endl;
+    return 1;
+#endif
   } else if (algo_type == TYPE_CUSTOM) {
+#if PQC_HAS_CUSTOM_SPHINCS
     return benchmark_custom(alg_name, mode, iterations, baseline_mem, pk_file,
                             sk_file, sig_file);
+#else
+    std::cerr << "Custom SPHINCS+ support not compiled in." << std::endl;
+    return 1;
+#endif
   }
 
   return 1;

@@ -22,10 +22,10 @@ const std::string BENCHMARK_CMD_PREFIX = "./benchmark";
 #endif
 
 const bool USE_BASELINE_MEMORY = true;
-const int ITERATIONS_STATELESS = 100;
-const int ITERATIONS_STATEFUL = 1000;
-const int ITERATIONS_STATELESS_MINE = 100;
-const int ITERATIONS_LATTICE = 5000;
+const int ITERATIONS_STATELESS = 10;
+const int ITERATIONS_STATEFUL = 10;
+const int ITERATIONS_STATELESS_MINE = 10;
+const int ITERATIONS_LATTICE = 100;
 
 const int TYPE_OQS_STATELESS = 0;
 const int TYPE_OQS_STATEFUL = 1;
@@ -179,21 +179,21 @@ int main() {
 
   std::string arg_baseline = USE_BASELINE_MEMORY ? " 1 " : " 0 ";
 
-  for (const auto &alg_name : algorithms_stateless)
-    run_suite(output_file, arg_baseline, alg_name, TYPE_OQS_STATELESS,
-              ITERATIONS_STATELESS);
+  // for (const auto &alg_name : algorithms_stateless)
+  //   run_suite(output_file, arg_baseline, alg_name, TYPE_OQS_STATELESS,
+  //             ITERATIONS_STATELESS);
 
-  for (const auto &alg_name : algorithms_stateful)
-    run_suite(output_file, arg_baseline, alg_name, TYPE_OQS_STATEFUL,
-              ITERATIONS_STATEFUL);
+  // for (const auto &alg_name : algorithms_stateful)
+  //   run_suite(output_file, arg_baseline, alg_name, TYPE_OQS_STATEFUL,
+  //             ITERATIONS_STATEFUL);
 
   for (const auto &alg_name : algorithms_mine_stateless)
     run_suite(output_file, arg_baseline, alg_name, TYPE_CUSTOM,
               ITERATIONS_STATELESS_MINE);
 
-  for (const auto &alg_name : algorithms_lattice)
-    run_suite(output_file, arg_baseline, alg_name, TYPE_OQS_STATELESS,
-              ITERATIONS_LATTICE);
+  // for (const auto &alg_name : algorithms_lattice)
+  //   run_suite(output_file, arg_baseline, alg_name, TYPE_OQS_STATELESS,
+  //             ITERATIONS_LATTICE);
 
   std::cout << "All tests finished. Results saved to " << output_filename
             << std::endl;

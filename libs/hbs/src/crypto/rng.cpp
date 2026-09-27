@@ -2,8 +2,8 @@
 #include <iostream>
 
 #ifdef _WIN32
-#include <bcrypt.h>
 #include <windows.h>
+#include <bcrypt.h>
 
 #pragma comment(lib, "bcrypt.lib")
 #else
