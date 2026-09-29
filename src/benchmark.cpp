@@ -1,129 +1,96 @@
 #include <chrono>
-#include <filesystem>
 #include <fstream>
 #include <iostream>
-#include <numeric>
 #include <string>
 #include <vector>
 
-#ifndef PQC_HAS_OQS
-#define PQC_HAS_OQS 0
-#endif
-#ifndef PQC_HAS_CUSTOM_SPHINCS
-#define PQC_HAS_CUSTOM_SPHINCS 0
-#endif
-
-#if PQC_HAS_CUSTOM_SPHINCS
-#include "sphincs.h"
-#endif
-
-#if PQC_HAS_OQS
+#ifdef PQC_HAS_OQS
 #include <oqs/oqs.h>
+#endif
+
+#ifdef PQC_HAS_CUSTOM_SPHINCS
+#include "hbs/hbs.h"
 #endif
 
 #ifdef _WIN32
 #include <windows.h>
 #include <psapi.h>
+
 #else
 #include <sys/resource.h>
-#include <unistd.h>
 #endif
 
 const int TYPE_OQS_STATELESS = 0;
 const int TYPE_OQS_STATEFUL = 1;
 const int TYPE_CUSTOM = 2;
 
-/*	This function takes a filename and a byte vector,
- *	and writes the contents of the vector to the specified
- *	file in binary mode.
- */
+static int skip(const std::string &reason) {
+  std::cerr << "SKIP: " << reason << std::endl;
+  std::cout << "SKIP";
+  return 2;
+}
+
+static void emit_progress(const char *phase, int i, int n) {
+  std::cerr << "PROGRESS " << phase << " " << i << " " << n << std::endl;
+}
+
+static std::string sanitize_filename(const std::string &name) {
+  std::string out = name;
+  for (char &c : out) {
+    if (c == '/' || c == '\\' || c == ':' || c == ' ')
+      c = '_';
+  }
+  return out;
+}
+
 void write_file(const std::string &filename, const std::vector<uint8_t> &data) {
   std::ofstream file(filename, std::ios::binary);
-  file.write(reinterpret_cast<const char *>(data.data()), data.size());
+  if (!file)
+    return;
+  file.write(reinterpret_cast<const char *>(data.data()),
+             static_cast<std::streamsize>(data.size()));
 }
 
-/*	This function sanitizes input string with underscores,
- *	so there is no erros when saving files.
- */
-std::string sanitize_filename(std::string name) {
-  for (char &c : name) {
-    if (c == '/' || c == '\\' || c == ':' || c == '*' || c == '?' || c == '"' ||
-        c == '<' || c == '>' || c == '|') {
-      c = '_';
-    }
-  }
-  return name;
-}
-
-/*	This function opens a binary file and reads its contents
- *	into byte vector. If the file cannot be opened, it returns
- *	an empty vector.
- */
 std::vector<uint8_t> read_file(const std::string &filename) {
   std::ifstream file(filename, std::ios::binary | std::ios::ate);
-  if (!file.is_open())
+  if (!file)
     return {};
-  std::streamsize size = file.tellg();
+  auto size = file.tellg();
   file.seekg(0, std::ios::beg);
-  std::vector<uint8_t> buffer(size);
+  std::vector<uint8_t> buffer(static_cast<size_t>(size));
   file.read(reinterpret_cast<char *>(buffer.data()), size);
   return buffer;
 }
 
-/*	This function gets the peak memory usage of the current process.
- *	It uses Windows Process Memory Counters or Linux rusage.
- *	Returns memory in Kilobytes.
- */
 long get_peak_memory_kb() {
 #ifdef _WIN32
   PROCESS_MEMORY_COUNTERS_EX pmc;
   if (GetProcessMemoryInfo(GetCurrentProcess(), (PROCESS_MEMORY_COUNTERS *)&pmc,
-                           sizeof(pmc))) {
-    return pmc.PeakWorkingSetSize / 1024;
-  }
+                           sizeof(pmc)))
+    return static_cast<long>(pmc.PeakWorkingSetSize / 1024);
   return -1;
 #else
   struct rusage usage;
-  if (getrusage(RUSAGE_SELF, &usage) == 0) {
+  if (getrusage(RUSAGE_SELF, &usage) == 0)
     return usage.ru_maxrss;
-  }
   return -1;
 #endif
 }
 
-#if PQC_HAS_OQS
-
+#ifdef PQC_HAS_OQS
 struct stfl_key_storage {
   std::vector<uint8_t> key_data;
 };
 
-/*	This callback function is requried by liboqs stateful API.
- *	It handles the updated secret key buffer after a signature
- *	is generated
- */
 OQS_STATUS my_secure_store_sk(uint8_t *sk_buf, size_t sk_buf_len,
                               void *context) {
-  if (context == NULL) {
+  if (context == NULL)
     return OQS_ERROR;
-  }
-
-  stfl_key_storage *storage = static_cast<stfl_key_storage *>(context);
-
+  auto *storage = static_cast<stfl_key_storage *>(context);
   storage->key_data.assign(sk_buf, sk_buf + sk_buf_len);
-
   return OQS_SUCCESS;
 }
 
-/*	This function benchmarks stateless liboqs algorithms.
- *
- *	alg_name:		Name of the algorithm.
- *	mode:			0 for Key Generation, 1 for Signing, 2 for
- * Verification. iterations:		Number of times to run the operation.
- *	baseline_mem:	Process memory usage before the operation.
- *	pk_file:		Path to read/write the public key.
- *	sk_file:		Path to read/write the secret key.
- *	sig_file:		Path to read/write the signature.
- */
 int benchmark_oqs_stateless(const std::string &alg_name, int mode,
                             int iterations, long baseline_mem,
                             const std::string &pk_file,
@@ -131,14 +98,18 @@ int benchmark_oqs_stateless(const std::string &alg_name, int mode,
                             const std::string &sig_file) {
   OQS_SIG *sig = OQS_SIG_new(alg_name.c_str());
   if (!sig)
-    return 1;
+    return skip("OQS could not create '" + alg_name + "'");
 
   if (mode == 0) {
     std::vector<uint8_t> pk(sig->length_public_key), sk(sig->length_secret_key);
+    emit_progress("keygen", 0, 1);
     auto start = std::chrono::high_resolution_clock::now();
-    OQS_SIG_keypair(sig, pk.data(), sk.data());
+    if (OQS_SIG_keypair(sig, pk.data(), sk.data()) != OQS_SUCCESS) {
+      OQS_SIG_free(sig);
+      return skip("OQS keygen failed for " + alg_name);
+    }
     auto end = std::chrono::high_resolution_clock::now();
-
+    emit_progress("keygen", 1, 1);
     write_file(pk_file, pk);
     write_file(sk_file, sk);
     std::cout << (double)(std::chrono::duration_cast<std::chrono::microseconds>(
@@ -149,19 +120,24 @@ int benchmark_oqs_stateless(const std::string &alg_name, int mode,
               << sig->length_signature;
   } else if (mode == 1) {
     std::vector<uint8_t> sk = read_file(sk_file);
-    if (sk.empty())
+    if (sk.empty()) {
+      OQS_SIG_free(sig);
       return 1;
+    }
     std::vector<uint8_t> msg(100);
     std::vector<uint8_t> signature(sig->length_signature);
-    size_t sig_len;
-
+    size_t sig_len = 0;
     auto start = std::chrono::high_resolution_clock::now();
     for (int i = 0; i < iterations; i++) {
-      OQS_SIG_sign(sig, signature.data(), &sig_len, msg.data(), msg.size(),
-                   sk.data());
+      if (OQS_SIG_sign(sig, signature.data(), &sig_len, msg.data(), msg.size(),
+                       sk.data()) != OQS_SUCCESS) {
+        OQS_SIG_free(sig);
+        return skip("OQS sign failed for " + alg_name);
+      }
+      emit_progress("sign", i + 1, iterations);
     }
     auto end = std::chrono::high_resolution_clock::now();
-
+    signature.resize(sig_len);
     write_file(sig_file, signature);
     std::cout << (double)(std::chrono::duration_cast<std::chrono::microseconds>(
                               end - start)
@@ -171,17 +147,21 @@ int benchmark_oqs_stateless(const std::string &alg_name, int mode,
   } else if (mode == 2) {
     std::vector<uint8_t> pk = read_file(pk_file);
     std::vector<uint8_t> signature = read_file(sig_file);
-    if (pk.empty() || signature.empty())
+    if (pk.empty() || signature.empty()) {
+      OQS_SIG_free(sig);
       return 1;
+    }
     std::vector<uint8_t> msg(100);
-
     auto start = std::chrono::high_resolution_clock::now();
     for (int i = 0; i < iterations; i++) {
-      OQS_SIG_verify(sig, msg.data(), msg.size(), signature.data(),
-                     signature.size(), pk.data());
+      if (OQS_SIG_verify(sig, msg.data(), msg.size(), signature.data(),
+                         signature.size(), pk.data()) != OQS_SUCCESS) {
+        OQS_SIG_free(sig);
+        return skip("OQS verify failed for " + alg_name);
+      }
+      emit_progress("verify", i + 1, iterations);
     }
     auto end = std::chrono::high_resolution_clock::now();
-
     std::cout << (double)(std::chrono::duration_cast<std::chrono::microseconds>(
                               end - start)
                               .count()) /
@@ -192,16 +172,6 @@ int benchmark_oqs_stateless(const std::string &alg_name, int mode,
   return 0;
 }
 
-/*	This function benchmarks stateful liboqs algorithms.
- *
- *	alg_name:		Name of the algorithm.
- *	mode:			0 for Key Generation, 1 for Signing, 2 for
- * Verification. iterations:		Number of times to run the operation.
- *	baseline_mem:	Process memory usage before the operation.
- *	pk_file:		Path to read/write the public key.
- *	sk_file:		Path to read/write the secret key.
- *	sig_file:		Path to read/write the signature.
- */
 int benchmark_oqs_stateful(const std::string &alg_name, int mode,
                            int iterations, long baseline_mem,
                            const std::string &pk_file,
@@ -209,7 +179,7 @@ int benchmark_oqs_stateful(const std::string &alg_name, int mode,
                            const std::string &sig_file) {
   OQS_SIG_STFL *sig = OQS_SIG_STFL_new(alg_name.c_str());
   if (!sig)
-    return 1;
+    return skip("OQS could not create stateful '" + alg_name + "'");
 
   if (mode == 0) {
     std::vector<uint8_t> pk(sig->length_public_key);
@@ -218,12 +188,17 @@ int benchmark_oqs_stateful(const std::string &alg_name, int mode,
     stfl_key_storage store;
     OQS_SIG_STFL_SECRET_KEY_SET_store_cb(sk_obj, my_secure_store_sk, &store);
 
+    emit_progress("keygen", 0, 1);
     auto start = std::chrono::high_resolution_clock::now();
-    OQS_SIG_STFL_keypair(sig, pk.data(), sk_obj);
+    if (OQS_SIG_STFL_keypair(sig, pk.data(), sk_obj) != OQS_SUCCESS) {
+      OQS_SIG_STFL_SECRET_KEY_free(sk_obj);
+      OQS_SIG_STFL_free(sig);
+      return skip("OQS stateful keygen failed for " + alg_name);
+    }
     auto end = std::chrono::high_resolution_clock::now();
+    emit_progress("keygen", 1, 1);
 
     write_file(pk_file, pk);
-
     uint8_t *sk_bytes = nullptr;
     size_t sk_len = 0;
     OQS_SIG_STFL_SECRET_KEY_serialize(&sk_bytes, &sk_len, sk_obj);
@@ -240,8 +215,10 @@ int benchmark_oqs_stateful(const std::string &alg_name, int mode,
     OQS_SIG_STFL_SECRET_KEY_free(sk_obj);
   } else if (mode == 1) {
     std::vector<uint8_t> sk_data = read_file(sk_file);
-    if (sk_data.empty())
+    if (sk_data.empty()) {
+      OQS_SIG_STFL_free(sig);
       return 1;
+    }
 
     OQS_SIG_STFL_SECRET_KEY *sk_obj =
         OQS_SIG_STFL_SECRET_KEY_new(alg_name.c_str());
@@ -252,15 +229,28 @@ int benchmark_oqs_stateful(const std::string &alg_name, int mode,
 
     std::vector<uint8_t> msg(100);
     std::vector<uint8_t> signature(sig->length_signature);
-    size_t sig_len;
+    size_t sig_len = 0;
 
     auto start = std::chrono::high_resolution_clock::now();
     for (int i = 0; i < iterations; i++) {
-      OQS_SIG_STFL_sign(sig, signature.data(), &sig_len, msg.data(), msg.size(),
-                        sk_obj);
+      if (OQS_SIG_STFL_sign(sig, signature.data(), &sig_len, msg.data(),
+                            msg.size(), sk_obj) != OQS_SUCCESS) {
+        OQS_SIG_STFL_SECRET_KEY_free(sk_obj);
+        OQS_SIG_STFL_free(sig);
+        return skip("OQS stateful sign failed for " + alg_name +
+                    " (key exhausted?)");
+      }
+      emit_progress("sign", i + 1, iterations);
     }
     auto end = std::chrono::high_resolution_clock::now();
 
+    uint8_t *sk_bytes = nullptr;
+    size_t sk_len = 0;
+    OQS_SIG_STFL_SECRET_KEY_serialize(&sk_bytes, &sk_len, sk_obj);
+    write_file(sk_file, std::vector<uint8_t>(sk_bytes, sk_bytes + sk_len));
+    OQS_MEM_secure_free(sk_bytes, sk_len);
+
+    signature.resize(sig_len);
     write_file(sig_file, signature);
     std::cout << (double)(std::chrono::duration_cast<std::chrono::microseconds>(
                               end - start)
@@ -271,18 +261,21 @@ int benchmark_oqs_stateful(const std::string &alg_name, int mode,
   } else if (mode == 2) {
     std::vector<uint8_t> pk = read_file(pk_file);
     std::vector<uint8_t> signature = read_file(sig_file);
-    if (pk.empty() || signature.empty())
+    if (pk.empty() || signature.empty()) {
+      OQS_SIG_STFL_free(sig);
       return 1;
-
+    }
     std::vector<uint8_t> msg(100);
-
     auto start = std::chrono::high_resolution_clock::now();
     for (int i = 0; i < iterations; i++) {
-      OQS_SIG_STFL_verify(sig, msg.data(), msg.size(), signature.data(),
-                          signature.size(), pk.data());
+      if (OQS_SIG_STFL_verify(sig, msg.data(), msg.size(), signature.data(),
+                              signature.size(), pk.data()) != OQS_SUCCESS) {
+        OQS_SIG_STFL_free(sig);
+        return skip("OQS stateful verify failed for " + alg_name);
+      }
+      emit_progress("verify", i + 1, iterations);
     }
     auto end = std::chrono::high_resolution_clock::now();
-
     std::cout << (double)(std::chrono::duration_cast<std::chrono::microseconds>(
                               end - start)
                               .count()) /
@@ -292,72 +285,65 @@ int benchmark_oqs_stateful(const std::string &alg_name, int mode,
   OQS_SIG_STFL_free(sig);
   return 0;
 }
+#else
+int benchmark_oqs_stateless(const std::string &, int, int, long,
+                            const std::string &, const std::string &,
+                            const std::string &) {
+  return skip("built without liboqs");
+}
+int benchmark_oqs_stateful(const std::string &, int, int, long,
+                           const std::string &, const std::string &,
+                           const std::string &) {
+  return skip("built without liboqs");
+}
+#endif
 
-#endif // PQC_HAS_OQS
-
-#if PQC_HAS_CUSTOM_SPHINCS
-
-/*	This function benchmarks my SPHINCS+ implementation.
- *
- *	alg_name:		Name of the algorithm.
- *	mode:			0 for Key Generation, 1 for Signing, 2 for
- * Verification. iterations:		Number of times to run the operation.
- *	baseline_mem:	Process memory usage before the operation.
- *	pk_file:		Path to read/write the public key.
- *	sk_file:		Path to read/write the secret key.
- *	sig_file:		Path to read/write the signature.
- */
 int benchmark_custom(const std::string &alg_name, int mode, int iterations,
                      long baseline_mem, const std::string &pk_file,
                      const std::string &sk_file, const std::string &sig_file) {
-  SphexVariant variant;
-
-  if (alg_name == "MY_SPHINCS-128f")
-    variant = SphexVariant::SHAKE_128F_SIMPLE;
-  else if (alg_name == "MY_SPHINCS-128s")
-    variant = SphexVariant::SHAKE_128S_SIMPLE;
-  else if (alg_name == "MY_SPHINCS-192f")
-    variant = SphexVariant::SHAKE_192F_SIMPLE;
-  else if (alg_name == "MY_SPHINCS-192s")
-    variant = SphexVariant::SHAKE_192S_SIMPLE;
-  else if (alg_name == "MY_SPHINCS-256f")
-    variant = SphexVariant::SHAKE_256F_SIMPLE;
-  else if (alg_name == "MY_SPHINCS-256s")
-    variant = SphexVariant::SHAKE_256S_SIMPLE;
-  else
-    return 1;
-
-  SphincsPlus sp(variant);
+#ifndef PQC_HAS_CUSTOM_SPHINCS
+  (void)alg_name;
+  (void)mode;
+  (void)iterations;
+  (void)baseline_mem;
+  (void)pk_file;
+  (void)sk_file;
+  (void)sig_file;
+  return skip("custom library (libhbs) was not built");
+#else
+  auto scheme = hbs::open(alg_name);
+  if (!scheme)
+    return skip("unknown custom scheme '" + alg_name + "'");
 
   if (mode == 0) {
     std::vector<uint8_t> sk;
+    emit_progress("keygen", 0, 1);
     auto start = std::chrono::high_resolution_clock::now();
-    std::vector<uint8_t> pk = sp.keygen(sk);
+    std::vector<uint8_t> pk = scheme->keygen(sk);
     auto end = std::chrono::high_resolution_clock::now();
-
+    emit_progress("keygen", 1, 1);
+    if (pk.empty() || sk.empty())
+      return skip("custom keygen failed for " + alg_name);
     write_file(pk_file, pk);
     write_file(sk_file, sk);
-
     std::cout << (double)(std::chrono::duration_cast<std::chrono::microseconds>(
                               end - start)
                               .count())
               << "," << (get_peak_memory_kb() - baseline_mem) << ","
-              << sp.get_pk_size() << "," << sp.get_sk_size() << ","
-              << sp.get_sig_size();
+              << scheme->info().pk_size << "," << scheme->info().sk_size << ","
+              << scheme->info().sig_size;
   } else if (mode == 1) {
     std::vector<uint8_t> sk = read_file(sk_file);
     std::vector<uint8_t> msg(100, 0);
     std::vector<uint8_t> signature;
-
     auto start = std::chrono::high_resolution_clock::now();
     for (int i = 0; i < iterations; i++) {
-      signature = sp.sign(msg, sk);
-      if (signature.empty()) {
-        std::cout << "Signature empty" << std::endl;
-      }
+      signature = scheme->sign(msg, sk);
+      if (signature.empty())
+        return skip("custom sign failed for " + alg_name);
+      emit_progress("sign", i + 1, iterations);
     }
     auto end = std::chrono::high_resolution_clock::now();
-
     write_file(sig_file, signature);
     std::cout << (double)(std::chrono::duration_cast<std::chrono::microseconds>(
                               end - start)
@@ -368,13 +354,13 @@ int benchmark_custom(const std::string &alg_name, int mode, int iterations,
     std::vector<uint8_t> pk = read_file(pk_file);
     std::vector<uint8_t> signature = read_file(sig_file);
     std::vector<uint8_t> msg(100, 0);
-
     auto start = std::chrono::high_resolution_clock::now();
     for (int i = 0; i < iterations; i++) {
-      sp.verify(msg, signature, pk);
+      if (!scheme->verify(msg, signature, pk))
+        return skip("custom verify failed for " + alg_name);
+      emit_progress("verify", i + 1, iterations);
     }
     auto end = std::chrono::high_resolution_clock::now();
-
     std::cout << (double)(std::chrono::duration_cast<std::chrono::microseconds>(
                               end - start)
                               .count()) /
@@ -382,24 +368,55 @@ int benchmark_custom(const std::string &alg_name, int mode, int iterations,
               << "," << (get_peak_memory_kb() - baseline_mem);
   }
   return 0;
+#endif
 }
 
-#endif // PQC_HAS_CUSTOM_SPHINCS
+static int print_list() {
+  std::cout << "name,type,family,stateful,pk_size,sk_size,sig_size\n";
+#ifdef PQC_HAS_OQS
+  for (int i = 0; i < OQS_SIG_alg_count(); ++i) {
+    const char *id = OQS_SIG_alg_identifier(i);
+    if (!id || !OQS_SIG_alg_is_enabled(id))
+      continue;
+    OQS_SIG *sig = OQS_SIG_new(id);
+    if (!sig)
+      continue;
+    std::cout << id << ",oqs_stateless,oqs,0," << sig->length_public_key << ","
+              << sig->length_secret_key << "," << sig->length_signature << "\n";
+    OQS_SIG_free(sig);
+  }
+  for (int i = 0; i < OQS_SIG_STFL_alg_count(); ++i) {
+    const char *id = OQS_SIG_STFL_alg_identifier(i);
+    if (!id || !OQS_SIG_STFL_alg_is_enabled(id))
+      continue;
+    OQS_SIG_STFL *sig = OQS_SIG_STFL_new(id);
+    if (!sig)
+      continue;
+    std::cout << id << ",oqs_stateful,oqs,1," << sig->length_public_key << ",,"
+              << sig->length_signature << "\n";
+    OQS_SIG_STFL_free(sig);
+  }
+#endif
+#ifdef PQC_HAS_CUSTOM_SPHINCS
+  for (const auto &s : hbs::list_schemes()) {
+    std::cout << s.name << ",custom," << s.family << "," << (s.stateful ? 1 : 0)
+              << "," << s.pk_size << "," << s.sk_size << "," << s.sig_size
+              << "\n";
+  }
+#endif
+  return 0;
+}
 
-/*	Main function.
- *
- *	Arguments:
- *	argv[1] (Algorithm name):	Sting name of the algorithm.
- *	argv[2] (Type):				The type of the algorithm (0 =
- * OQS stateless, 1 = OQS stateful, 2 = Custom). argv[3] (Mode):
- *		The operation to perform (0 = keygen, 1 = sign, 2 = verify).
- *	argv[4] (Iterations):		The number of times to perfomr
- * operation. argv[5]	(Baseline):			Flag to use baseline
- * memory (0 = absolute memory, 1 = substract baseline memory).
- */
 int main(int argc, char *argv[]) {
-  if (argc < 6)
-    return 1;
+  if (argc >= 2 && std::string(argv[1]) == "--list")
+    return print_list();
+
+  if (argc < 6) {
+    std::cerr
+        << "usage: benchmark <alg> <type> <mode> <iterations> <baseline>\n"
+        << "       benchmark --list\n";
+    return 3;
+  }
 
   std::string alg_name = argv[1];
   int algo_type = std::stoi(argv[2]);
@@ -409,36 +426,18 @@ int main(int argc, char *argv[]) {
 
   long baseline_mem = use_baseline ? get_peak_memory_kb() : 0;
   std::string safe_name = sanitize_filename(alg_name);
-
   std::string pk_file = safe_name + ".pk";
   std::string sk_file = safe_name + ".sk";
   std::string sig_file = safe_name + ".sig";
 
-  if (algo_type == TYPE_OQS_STATELESS) {
-#if PQC_HAS_OQS
+  if (algo_type == TYPE_OQS_STATELESS)
     return benchmark_oqs_stateless(alg_name, mode, iterations, baseline_mem,
                                    pk_file, sk_file, sig_file);
-#else
-    std::cerr << "OQS support not compiled in." << std::endl;
-    return 1;
-#endif
-  } else if (algo_type == TYPE_OQS_STATEFUL) {
-#if PQC_HAS_OQS
+  if (algo_type == TYPE_OQS_STATEFUL)
     return benchmark_oqs_stateful(alg_name, mode, iterations, baseline_mem,
                                   pk_file, sk_file, sig_file);
-#else
-    std::cerr << "OQS support not compiled in." << std::endl;
-    return 1;
-#endif
-  } else if (algo_type == TYPE_CUSTOM) {
-#if PQC_HAS_CUSTOM_SPHINCS
+  if (algo_type == TYPE_CUSTOM)
     return benchmark_custom(alg_name, mode, iterations, baseline_mem, pk_file,
                             sk_file, sig_file);
-#else
-    std::cerr << "Custom SPHINCS+ support not compiled in." << std::endl;
-    return 1;
-#endif
-  }
-
-  return 1;
+  return skip("unknown type");
 }
