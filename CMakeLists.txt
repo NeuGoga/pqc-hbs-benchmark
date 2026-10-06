@@ -4,11 +4,11 @@ project(PQC_HBS_Benchmark LANGUAGES CXX)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-
 option(PQC_ENABLE_CUSTOM_SPHINCS "Build libhbs (custom SPHINCS+)" ON)
 option(PQC_REQUIRE_OQS "Fail if liboqs is missing" OFF)
 option(PQC_BUILD_GUI "Build the desktop window" ON)
 
+# aqt default: C:\Qt\6.8.3\msvc2022_64
 if(WIN32)
     file(GLOB _PQC_QT_HINTS
         "C:/Qt/6.*/msvc2022_64"
@@ -60,6 +60,10 @@ endif()
 if(PQC_HAS_CUSTOM_SPHINCS)
     target_link_libraries(benchmark PRIVATE hbs)
     target_compile_definitions(benchmark PRIVATE PQC_HAS_CUSTOM_SPHINCS=1)
+    if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_hbs.cpp")
+        add_executable(test_hbs tests/test_hbs.cpp)
+        target_link_libraries(test_hbs PRIVATE hbs)
+    endif()
 endif()
 
 if(WIN32)
@@ -79,19 +83,17 @@ function(pqc_add_qt_gui)
     if(WIN32)
         get_target_property(QT_QMAKE_EXECUTABLE Qt${QT_VERSION_MAJOR}::qmake IMPORTED_LOCATION)
         get_filename_component(QT_BIN_DIR "${QT_QMAKE_EXECUTABLE}" DIRECTORY)
-        
         find_program(WINDEPLOYQT_EXECUTABLE windeployqt HINTS "${QT_BIN_DIR}")
-
         if(WINDEPLOYQT_EXECUTABLE)
             add_custom_command(TARGET hbs-bench POST_BUILD
                 COMMAND "${WINDEPLOYQT_EXECUTABLE}"
                         --no-translations
                         --no-compiler-runtime
                         "$<TARGET_FILE:hbs-bench>"
-                COMMENT "Automatically deploying Qt dependencies into the build folder..."
+                COMMENT "Deploying Qt DLLs next to hbs-bench.exe"
             )
         else()
-            message(WARNING "windeployqt not found. You may need to manually copy Qt DLLs.")
+            message(WARNING "windeployqt not found. You may need to copy Qt DLLs next to hbs-bench.exe.")
         endif()
     endif()
 endfunction()

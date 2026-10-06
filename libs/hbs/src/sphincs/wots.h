@@ -2,10 +2,8 @@
 #include "internal/types.h"
 #include "sphincs/hash.h"
 
-void gen_chain(const Keccak &state_seeded, const uint8_t *in, int start,
+void gen_chain(const Shake256 &state_seeded, const uint8_t *in, int start,
                int steps, Address addr, int N, uint8_t *out);
-void wots_chain(const Keccak &state_seeded, const uint8_t *in, int start,
-                int steps, Address &addr, int N, uint8_t *out);
 Bytes wots_pkgen(const Bytes &sk_seed, const Bytes &pub_seed, Address addr,
                  SphincsPlus::Params *p);
 Bytes wots_sign(const Bytes &msg, const Bytes &sk_seed, const Bytes &pub_seed,

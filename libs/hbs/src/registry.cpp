@@ -1,4 +1,4 @@
-#include "crypto/keccak.h"
+#include "crypto/shake.h"
 #include "hbs/hbs.h"
 
 
@@ -94,13 +94,11 @@ std::unique_ptr<Scheme> open(const std::string &name) {
 }
 
 void shake256(const uint8_t *in, size_t in_len, uint8_t *out, size_t out_len) {
-  Keccak k;
-  k.absorb(in, in_len);
-  k.finalize_and_squeeze(out, out_len);
+  Shake256::hash(in, in_len, out, out_len);
 }
 
 void shake256(const std::vector<uint8_t> &in, std::vector<uint8_t> &out) {
-  Keccak::shake256(in, out);
+  Shake256::hash(in, out);
 }
 
 } // namespace hbs

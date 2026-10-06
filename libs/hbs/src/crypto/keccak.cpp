@@ -2,7 +2,6 @@
 #include <algorithm>
 #include <cstring>
 
-
 void Keccak::keccak_f1600() {
   static const uint64_t RC[24] = {
       0x0000000000000001, 0x0000000000008082, 0x800000000000808a,

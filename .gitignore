@@ -4,14 +4,21 @@ x64/
 Debug/
 Release/
 .vs/
+CMakeFiles/
+CMakeCache.txt
+cmake_install.cmake
 *.sln
 *.vcxproj
+*.vcxproj.filters
 *.user
 
 *.csv
 *.pk
 *.sk
 *.sig
-tests/test_hbs
-benchmark
-tester
+*.exe
+*.lib
+*.exp
+*.obj
+*.dll
+!prod/**

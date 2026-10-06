@@ -1,6 +1,6 @@
 #pragma once
 
-#include "crypto/keccak.h"
+#include "crypto/shake.h"
 #include <cstdint>
 #include <cstring>
 #include <vector>
@@ -53,25 +53,24 @@ struct Address {
     }
   }
 
+  void write_bytes(uint8_t out[32]) const {
+    for (int i = 0; i < 8; i++) {
+      out[i * 4 + 0] = (uint8_t)((words[i] >> 24) & 0xFF);
+      out[i * 4 + 1] = (uint8_t)((words[i] >> 16) & 0xFF);
+      out[i * 4 + 2] = (uint8_t)((words[i] >> 8) & 0xFF);
+      out[i * 4 + 3] = (uint8_t)((words[i] >> 0) & 0xFF);
+    }
+  }
+
   Bytes to_bytes() const {
     Bytes out(32);
-    for (int i = 0; i < 8; i++) {
-      out[i * 4 + 0] = (words[i] >> 24) & 0xFF;
-      out[i * 4 + 1] = (words[i] >> 16) & 0xFF;
-      out[i * 4 + 2] = (words[i] >> 8) & 0xFF;
-      out[i * 4 + 3] = (words[i] >> 0) & 0xFF;
-    }
+    write_bytes(out.data());
     return out;
   }
 
-  void absorb_into(Keccak &k) const {
+  void absorb_into(Shake256 &k) const {
     uint8_t temp[32];
-    for (int i = 0; i < 8; i++) {
-      temp[i * 4 + 0] = (words[i] >> 24) & 0xFF;
-      temp[i * 4 + 1] = (words[i] >> 16) & 0xFF;
-      temp[i * 4 + 2] = (words[i] >> 8) & 0xFF;
-      temp[i * 4 + 3] = (words[i] >> 0) & 0xFF;
-    }
+    write_bytes(temp);
     k.absorb(temp, 32);
   }
 };

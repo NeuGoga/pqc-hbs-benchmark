@@ -7,12 +7,9 @@
 #include <stdexcept>
 #include <vector>
 
-
-#include "crypto/keccak.h"
 #include "crypto/rng.h"
 #include "sphincs/address.h"
 #include "sphincs/params.h"
-
 
 uint32_t extract_fors_idx(const std::vector<uint8_t> &msg, int idx, int a);
 Bytes extract_bytes(const std::vector<uint8_t> &src, size_t &offset,

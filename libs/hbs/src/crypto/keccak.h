@@ -5,7 +5,6 @@
 #include <cstring>
 #include <vector>
 
-
 class Keccak {
 private:
   uint64_t state[25];
