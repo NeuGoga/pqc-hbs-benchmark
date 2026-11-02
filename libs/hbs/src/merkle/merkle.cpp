@@ -1,4 +1,5 @@
 #include "merkle/merkle.h"
+#include "crypto/threads.h"
 #include "sphincs/hash.h"
 #include "sphincs/wots.h"
 
@@ -46,6 +47,8 @@ Bytes treehash_authpath(const Bytes &sk_seed, const Bytes &pub_seed,
                         uint32_t target_leaf_idx, int tree_height,
                         SphincsPlus::Params *p, std::vector<Bytes> *auth_path,
                         const uint8_t *known_target_leaf) {
+  if (tree_height < 0 || tree_height > 30)
+    throw std::runtime_error("Merkle tree height out of range");
   uint32_t nleaves = 1u << tree_height;
   bool is_hypertree = (addr.words[4] == ADDR_TYPE_TREE);
 
@@ -54,8 +57,20 @@ Bytes treehash_authpath(const Bytes &sk_seed, const Bytes &pub_seed,
 
   std::vector<uint8_t> leaf_buf((size_t)nleaves * (size_t)N);
 
+  /* Hypertree leaves are full WOTS public keys, so the win is here.
+     FORS leaves are two hashes; only split those when the tree is large
+     and we are not already inside the FORS team (no nested N*K threads). */
+  int nt = 1;
 #ifdef _OPENMP
-#pragma omp parallel
+  const bool heavy = is_hypertree || nleaves >= 32;
+  if (heavy && !omp_in_parallel())
+    nt = hbs_threads_for((int)nleaves);
+#endif
+  if (nt < 1)
+    nt = 1;
+
+#ifdef _OPENMP
+#pragma omp parallel num_threads(nt) if (nt > 1)
 #endif
   {
     Shake256 seeded;

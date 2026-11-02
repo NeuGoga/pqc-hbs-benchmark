@@ -1,4 +1,5 @@
 #include "hbs/sphincs.h"
+#include "crypto/threads.h"
 #include "internal/types.h"
 #include "merkle/merkle.h"
 #include "sphincs/fors.h"
@@ -16,7 +17,6 @@ SphincsPlus::~SphincsPlus() { delete p; }
 std::vector<uint8_t> SphincsPlus::keygen(std::vector<uint8_t> &sk_out) {
   Bytes seeds((size_t)(3 * p->N));
   if (!generate_random_bytes(seeds)) {
-    std::cerr << "Error: Failed to CSPRNG.\n";
     sk_out.clear();
     return {};
   }
@@ -29,7 +29,6 @@ std::vector<uint8_t>
 SphincsPlus::keygen_from_seed(const std::vector<uint8_t> &seed,
                               std::vector<uint8_t> &sk_out) {
   if (seed.size() != (size_t)(3 * p->N)) {
-    std::cerr << "Error: seed must be 3N bytes.\n";
     sk_out.clear();
     return {};
   }
@@ -62,12 +61,17 @@ int SphincsPlus::n() const { return p->N; }
 std::vector<uint8_t> SphincsPlus::sign(const std::vector<uint8_t> &msg,
                                        const std::vector<uint8_t> &sk) {
   const int n = p->N;
+  if (sk.size() != (size_t)(4 * n))
+    return {};
   Bytes sk_seed(sk.begin(), sk.begin() + n);
   Bytes sk_prf(sk.begin() + n, sk.begin() + 2 * n);
   Bytes pub_seed(sk.begin() + 2 * n, sk.begin() + 3 * n);
   Bytes pk_root(sk.begin() + 3 * n, sk.end());
 
   uint8_t R[32];
+  /* optrand is fixed to PK.seed. The SPHINCS+ reference does the same when
+     its optional randomness is set to the public seed, so signatures match
+     that known-answer mode byte for byte. */
   prf_msg(sk_prf.data(), pub_seed.data(), (size_t)n, msg.data(), msg.size(), R);
 
   Bytes buf;
@@ -112,14 +116,19 @@ std::vector<uint8_t> SphincsPlus::sign(const std::vector<uint8_t> &msg,
   std::vector<Bytes> fors_sk((size_t)k);
   std::vector<std::vector<Bytes>> fors_paths((size_t)k);
 
+  int nt = hbs_threads_for(k);
+  if (nt < 1)
+    nt = 1;
 #ifdef _OPENMP
-#pragma omp parallel
+  if (omp_in_parallel())
+    nt = 1;
+#pragma omp parallel num_threads(nt) if (nt > 1)
 #endif
   {
     Shake256 state_seeded;
     state_seeded.absorb(pub_seed.data(), pub_seed.size());
 #ifdef _OPENMP
-#pragma omp for schedule(dynamic)
+#pragma omp for schedule(static)
 #endif
     for (int i = 0; i < k; i++) {
       uint32_t actual_fors_idx = extract_fors_idx(msg_digest_full, i, a);
@@ -220,6 +229,7 @@ std::vector<uint8_t> SphincsPlus::sign(const std::vector<uint8_t> &msg,
 bool SphincsPlus::verify(const std::vector<uint8_t> &msg,
                          const std::vector<uint8_t> &sig,
                          const std::vector<uint8_t> &pk) {
+  try {
   if (sig.size() != get_sig_size())
     return false;
   if (pk.size() != (size_t)(2 * p->N))
@@ -306,6 +316,9 @@ bool SphincsPlus::verify(const std::vector<uint8_t> &msg,
     tree_idx >>= p->H_PRIME;
   }
   return (crypto_memcmp(current_root.data(), pk_root.data(), (size_t)n) == 0);
+  } catch (const std::exception &) {
+    return false;
+  }
 }
 
 size_t SphincsPlus::get_pk_size() const { return (size_t)(2 * p->N); }

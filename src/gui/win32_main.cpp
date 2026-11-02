@@ -45,7 +45,9 @@ enum {
   IDC_STATUS = 114,
   IDC_LBL_TYPE = 115,
   IDC_LBL_SCHEME = 116,
-  IDC_LBL_ITERS = 117
+  IDC_LBL_ITERS = 117,
+  IDC_THREADS = 118,
+  IDC_LBL_THREADS = 119
 };
 
 const UINT WM_WORKER_LINE = WM_APP + 1;
@@ -74,7 +76,8 @@ struct RunResult {
 };
 
 HWND g_wnd = nullptr;
-HWND g_type = nullptr, g_schemes = nullptr, g_iters = nullptr;
+HWND g_type = nullptr, g_schemes = nullptr, g_iters = nullptr,
+     g_threads = nullptr;
 HWND g_add = nullptr, g_remove = nullptr, g_run = nullptr, g_cancel = nullptr,
      g_export = nullptr;
 HWND g_queue = nullptr, g_results = nullptr, g_progress = nullptr;
@@ -196,6 +199,40 @@ struct ProcResult {
   std::string err;
 };
 
+/* Restores the parent environment after CreateProcess has inherited it. */
+struct EnvSet {
+  std::wstring name;
+  std::wstring prev;
+  bool had = false;
+  bool on = false;
+  void set(const wchar_t *n, const wchar_t *v) {
+    name = n;
+    DWORD sz = GetEnvironmentVariableW(n, nullptr, 0);
+    if (sz > 0) {
+      prev.assign(sz, L'\0');
+      GetEnvironmentVariableW(n, &prev[0], sz);
+      if (!prev.empty() && prev.back() == L'\0')
+        prev.pop_back();
+      had = true;
+    }
+    SetEnvironmentVariableW(n, v);
+    on = true;
+  }
+  ~EnvSet() {
+    if (on)
+      SetEnvironmentVariableW(name.c_str(), had ? prev.c_str() : nullptr);
+  }
+};
+
+static int ui_thread_cap() {
+  if (!g_threads)
+    return 0;
+  wchar_t buf[32]{};
+  GetWindowTextW(g_threads, buf, 32);
+  int n = _wtoi(buf);
+  return n > 0 ? n : 0;
+}
+
 bool run_process_capture(const std::wstring &cmd, ProcResult &res,
                          bool stream_progress) {
   SECURITY_ATTRIBUTES sa{};
@@ -218,8 +255,22 @@ bool run_process_capture(const std::wstring &cmd, ProcResult &res,
   PROCESS_INFORMATION pi{};
   std::wstring mutable_cmd = cmd;
   std::wstring cwd = exe_dir();
-  BOOL ok = CreateProcessW(nullptr, mutable_cmd.data(), nullptr, nullptr, TRUE,
-                           CREATE_NO_WINDOW, nullptr, cwd.c_str(), &si, &pi);
+  BOOL ok = FALSE;
+  {
+    /* A fixed Threads value is applied before the child starts, so both
+       libhbs (HBS_THREADS) and liboqs (OMP_NUM_THREADS) see it. 0 = auto. */
+    EnvSet e_hbs, e_omp, e_wait, e_dyn;
+    int cap = ui_thread_cap();
+    if (cap > 0) {
+      std::wstring ns = std::to_wstring(cap);
+      e_hbs.set(L"HBS_THREADS", ns.c_str());
+      e_omp.set(L"OMP_NUM_THREADS", ns.c_str());
+      e_wait.set(L"OMP_WAIT_POLICY", L"PASSIVE");
+      e_dyn.set(L"OMP_DYNAMIC", L"FALSE");
+    }
+    ok = CreateProcessW(nullptr, mutable_cmd.data(), nullptr, nullptr, TRUE,
+                        CREATE_NO_WINDOW, nullptr, cwd.c_str(), &si, &pi);
+  }
   CloseHandle(outW);
   CloseHandle(errW);
   if (!ok) {
@@ -341,6 +392,9 @@ void append_result_row(const RunResult &r) {
   lv_set(g_results, row, 5, r.keygenUs);
   lv_set(g_results, row, 6, r.signUs);
   lv_set(g_results, row, 7, r.verifyUs);
+  lv_set(g_results, row, 8, r.keygenMem);
+  lv_set(g_results, row, 9, r.signMem);
+  lv_set(g_results, row, 10, r.verifyMem);
 }
 
 void set_busy(bool busy) {
@@ -351,6 +405,7 @@ void set_busy(bool busy) {
   EnableWindow(g_type, !busy);
   EnableWindow(g_schemes, !busy);
   EnableWindow(g_iters, !busy);
+  EnableWindow(g_threads, !busy);
   EnableWindow(g_cancel, busy);
 }
 
@@ -383,6 +438,11 @@ void start_worker(const std::wstring &cmd) {
   HANDLE th = CreateThread(nullptr, 0, job_thread, args, 0, nullptr);
   if (th)
     CloseHandle(th);
+  else {
+    delete args;
+    log_line(L"Could not start worker thread");
+    g_cancel = true;
+  }
 }
 
 std::wstring quoted(const std::wstring &s) { return L"\"" + s + L"\""; }
@@ -413,9 +473,36 @@ void finish_current() {
   append_result_row(g_current);
 }
 
+void prepare_current() {
+  if (g_queue_index < 0 || g_queue_index >= (int)g_queue_items.size())
+    return;
+  const QueueItem &q = g_queue_items[g_queue_index];
+  g_current = {};
+  g_current.name = q.scheme.name;
+  g_current.status = L"running";
+  g_current.pk = std::to_wstring(q.scheme.pk);
+  g_current.sk = std::to_wstring(q.scheme.sk);
+  g_current.sig = std::to_wstring(q.scheme.sig);
+}
+
+void advance_queue() {
+  ++g_queue_index;
+  g_step = 0;
+  if (!g_cancel && g_queue_index < (int)g_queue_items.size())
+    prepare_current();
+  start_step();
+}
+
 void on_worker_done(DWORD code, std::string out) {
   while (!out.empty() && (out.back() == '\n' || out.back() == '\r'))
     out.pop_back();
+  if (g_cancel) {
+    g_current.status = L"cancelled";
+    finish_current();
+    g_step = 0;
+    start_step();
+    return;
+  }
   bool skipped = out.rfind("SKIP", 0) == 0 || code == 2;
   bool failed = code != 0 && !skipped;
 
@@ -426,9 +513,7 @@ void on_worker_done(DWORD code, std::string out) {
       g_current.status = skipped ? L"skipped" : L"keygen failed";
       log_line(g_current.name + L" " + g_current.status);
       finish_current();
-      ++g_queue_index;
-      g_step = 0;
-      start_step();
+      advance_queue();
       return;
     }
     if (csv.size() >= 5) {
@@ -446,9 +531,7 @@ void on_worker_done(DWORD code, std::string out) {
     if (skipped || failed) {
       g_current.status = skipped ? L"sign skipped" : L"sign failed";
       finish_current();
-      ++g_queue_index;
-      g_step = 0;
-      start_step();
+      advance_queue();
       return;
     }
     if (csv.size() >= 2) {
@@ -469,17 +552,7 @@ void on_worker_done(DWORD code, std::string out) {
     }
   }
   finish_current();
-  ++g_queue_index;
-  g_step = 0;
-  if (g_queue_index < (int)g_queue_items.size()) {
-    g_current = {};
-    g_current.name = g_queue_items[g_queue_index].scheme.name;
-    g_current.status = L"running";
-    g_current.pk = std::to_wstring(g_queue_items[g_queue_index].scheme.pk);
-    g_current.sk = std::to_wstring(g_queue_items[g_queue_index].scheme.sk);
-    g_current.sig = std::to_wstring(g_queue_items[g_queue_index].scheme.sig);
-  }
-  start_step();
+  advance_queue();
 }
 
 void add_to_queue() {
@@ -531,9 +604,7 @@ void run_queue() {
   g_step = 0;
   g_results_items.clear();
   ListView_DeleteAllItems(g_results);
-  g_current = {};
-  g_current.name = g_queue_items[0].scheme.name;
-  g_current.status = L"running";
+  prepare_current();
   set_busy(true);
   start_step();
 }
@@ -560,13 +631,14 @@ void export_csv() {
   }
   f << "Algorithm,Status,PK Size (B),SK Size (B),Sig Size (B),Keygen Time "
        "(us),Sign Time (us),Verify Time (us),Keygen Peak Mem (KB),Sign Peak "
-       "Mem (KB)\n";
+       "Mem (KB),Verify Peak Mem (KB)\n";
   for (const auto &r : g_results_items) {
     f << wide_to_utf8(r.name) << "," << wide_to_utf8(r.status) << ","
       << wide_to_utf8(r.pk) << "," << wide_to_utf8(r.sk) << ","
       << wide_to_utf8(r.sig) << "," << wide_to_utf8(r.keygenUs) << ","
       << wide_to_utf8(r.signUs) << "," << wide_to_utf8(r.verifyUs) << ","
-      << wide_to_utf8(r.keygenMem) << "," << wide_to_utf8(r.signMem) << "\n";
+      << wide_to_utf8(r.keygenMem) << "," << wide_to_utf8(r.signMem) << ","
+      << wide_to_utf8(r.verifyMem) << "\n";
   }
 }
 
@@ -586,6 +658,9 @@ void layout(int w, int h) {
   y += scheme_h + 8;
   MoveWindow(GetDlgItem(g_wnd, IDC_LBL_ITERS), pad, y, 80, 18, TRUE);
   MoveWindow(g_iters, pad + 80, y - 2, 80, 22, TRUE);
+  y += 28;
+  MoveWindow(GetDlgItem(g_wnd, IDC_LBL_THREADS), pad, y, 80, 18, TRUE);
+  MoveWindow(g_threads, pad + 80, y - 2, 80, 22, TRUE);
   y += 32;
   MoveWindow(g_add, pad, y, left - pad, 28, TRUE);
 
@@ -634,6 +709,8 @@ LRESULT CALLBACK WndProc(HWND h, UINT m, WPARAM w, LPARAM l) {
         mk(L"LISTBOX", L"", WS_BORDER | WS_VSCROLL | LBS_NOTIFY, IDC_SCHEMES);
     mk(L"STATIC", L"Iterations", 0, IDC_LBL_ITERS);
     g_iters = mk(L"EDIT", L"8", WS_BORDER | ES_NUMBER, IDC_ITERS);
+    mk(L"STATIC", L"Threads", 0, IDC_LBL_THREADS);
+    g_threads = mk(L"EDIT", L"0", WS_BORDER | ES_NUMBER, IDC_THREADS);
     g_add = mk(L"BUTTON", L"Add to queue", BS_PUSHBUTTON, IDC_ADD);
     g_queue = mk(WC_LISTVIEWW, L"", WS_BORDER | LVS_REPORT | LVS_SINGLESEL,
                  IDC_QUEUE);
@@ -660,10 +737,11 @@ LRESULT CALLBACK WndProc(HWND h, UINT m, WPARAM w, LPARAM l) {
     lv_add_col(g_queue, 0, L"Scheme", 180);
     lv_add_col(g_queue, 1, L"Type", 110);
     lv_add_col(g_queue, 2, L"Iters", 60);
-    const wchar_t *rh[] = {L"Algorithm", L"Status",  L"PK",       L"SK", L"Sig",
-                           L"Keygen us", L"Sign us", L"Verify us"};
-    const int rw[] = {160, 90, 60, 60, 70, 90, 80, 80};
-    for (int i = 0; i < 8; ++i)
+    const wchar_t *rh[] = {L"Algorithm", L"Status",   L"PK",        L"SK",
+                           L"Sig",       L"Keygen us", L"Sign us",   L"Verify us",
+                           L"Kg KB",     L"Sign KB",   L"Ver KB"};
+    const int rw[] = {150, 90, 50, 50, 60, 80, 70, 70, 60, 60, 60};
+    for (int i = 0; i < 11; ++i)
       lv_add_col(g_results, i, rh[i], rw[i]);
 
     SendMessageW(g_type, CB_ADDSTRING, 0, (LPARAM)L"Custom (libhbs)");

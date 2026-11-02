@@ -50,6 +50,8 @@ endif()
 
 add_executable(benchmark src/benchmark.cpp)
 add_executable(tester src/tester.cpp)
+# Always available. No Qt, Win32, or Vulkan. Same worker as the other UIs.
+add_executable(hbs-tui src/gui/tui_main.cpp)
 
 if(PQC_HAS_OQS)
     target_include_directories(benchmark PRIVATE ${OQS_INCLUDE_DIR})
@@ -99,6 +101,9 @@ function(pqc_add_qt_gui)
 endfunction()
 
 if(PQC_BUILD_GUI)
+    # Toolkit order: Qt 6, then Qt 5, then the Win32 UI on Windows.
+    # If none of those are available the GUI is skipped; benchmark and
+    # tester still build. Hashing does not depend on the GUI.
     find_package(QT NAMES Qt6 Qt5 COMPONENTS Widgets QUIET)
     if(QT_FOUND)
         find_package(Qt${QT_VERSION_MAJOR} COMPONENTS Widgets REQUIRED)
@@ -111,7 +116,7 @@ if(PQC_BUILD_GUI)
         add_dependencies(hbs-bench benchmark)
         message(STATUS "GUI: Win32 (Qt not found — this is fine)")
     else()
-        message(WARNING "Qt Widgets not found — Linux GUI not built. Install qt6-base-dev.")
+        message(STATUS "GUI: terminal hbs-tui (Qt not found). Windows without Qt uses the Win32 window instead.")
     endif()
 endif()
 

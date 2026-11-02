@@ -39,6 +39,9 @@ public:
 
 std::unique_ptr<Scheme> open(const std::string &name);
 
+/* Worker threads libhbs will use. See HBS_THREADS in libs/hbs/README.md. */
+int thread_budget();
+
 /* SHAKE256 (FIPS 202) — exposed so tests can check the sponge against NIST. */
 void shake256(const uint8_t *in, size_t in_len, uint8_t *out, size_t out_len);
 void shake256(const std::vector<uint8_t> &in, std::vector<uint8_t> &out);

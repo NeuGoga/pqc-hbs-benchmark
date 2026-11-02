@@ -1,4 +1,5 @@
 #include "crypto/shake.h"
+#include "crypto/threads.h"
 #include "hbs/hbs.h"
 
 
@@ -92,6 +93,8 @@ std::unique_ptr<Scheme> open(const std::string &name) {
     return nullptr;
   return std::make_unique<SphincsScheme>(*v);
 }
+
+int thread_budget() { return hbs_thread_budget(); }
 
 void shake256(const uint8_t *in, size_t in_len, uint8_t *out, size_t out_len) {
   Shake256::hash(in, in_len, out, out_len);

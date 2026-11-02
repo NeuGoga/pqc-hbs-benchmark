@@ -147,6 +147,9 @@ libs/hbs/
 ```
 
 Build **without** liboqs is supported: OQS schemes are skipped, custom ones still run.
+Build **without** OpenSSL uses the bundled Keccak. Build **without** OpenMP
+runs the same SPHINCS+ code on one thread. CMake picks OpenSSL first, then
+links OpenMP if it is installed. The Makefile does the same probe.
 
 ```
 # list whatever this binary actually contains
@@ -154,11 +157,40 @@ Build **without** liboqs is supported: OQS schemes are skipped, custom ones stil
 ./tester --list
 ```
 
-Known-answer test (official SPHINCS+ ref, SHAKE-128f-simple):
+Thread cap for the custom schemes (so a run does not sit at 99% CPU):
+
+```
+HBS_THREADS=4 ./benchmark MY_SPHINCS-128f 2 0 1 1
+HBS_THREADS=all ./benchmark MY_SPHINCS-128f 2 0 1 1   # every logical CPU
+```
+
+The GUI uses the same idea: the best toolkit that is installed, and a
+fallback that needs nothing extra.
+
+1. **Qt 6 or Qt 5** Widgets, when CMake finds it (Windows and Linux).
+2. **Win32** on Windows when Qt is not installed.
+3. **`hbs-tui`**, a terminal UI built from the C++ standard library. It is
+   always compiled, including when Qt is missing on Linux. Vulkan is not used.
+
+`Threads` `0` (or `auto` in the Qt window) is the automatic cap. A positive
+number is passed as `HBS_THREADS` and `OMP_NUM_THREADS`.
+
+```
+./hbs-tui --list
+./hbs-tui run MY_SPHINCS-128f 1 0
+```
+
+Known-answer tests against the official SPHINCS+ reference
+(`THASH=simple`, `optrand = PK.seed`), plus one signature made with a
+different `optrand` that must still verify:
 
 ```
 make test
 ```
+
+Byte-for-byte signatures: SHAKE 128f, 128s, 192f, 256f. Public keys: 192s
+and 256s. The same files are checked with OpenMP on, with OpenMP off, and
+with OpenSSL SHAKE256 when that library is what the binary was linked to.
 
 CMake flags:
 

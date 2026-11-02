@@ -1,7 +1,9 @@
 #include <chrono>
+#include <cstdlib>
 #include <fstream>
 #include <iostream>
 #include <string>
+#include <thread>
 #include <vector>
 
 #ifdef PQC_HAS_OQS
@@ -28,6 +30,11 @@ static int skip(const std::string &reason) {
   std::cerr << "SKIP: " << reason << std::endl;
   std::cout << "SKIP";
   return 2;
+}
+
+static int fail(const std::string &reason) {
+  std::cerr << "FAIL: " << reason << std::endl;
+  return 1;
 }
 
 static void emit_progress(const char *phase, int i, int n) {
@@ -315,6 +322,12 @@ int benchmark_custom(const std::string &alg_name, int mode, int iterations,
   if (!scheme)
     return skip("unknown custom scheme '" + alg_name + "'");
 
+  unsigned logical = std::thread::hardware_concurrency();
+  if (logical < 1)
+    logical = 1;
+  std::cerr << "libhbs threads " << hbs::thread_budget() << "/" << logical
+            << " logical" << std::endl;
+
   if (mode == 0) {
     std::vector<uint8_t> sk;
     emit_progress("keygen", 0, 1);
@@ -323,7 +336,7 @@ int benchmark_custom(const std::string &alg_name, int mode, int iterations,
     auto end = std::chrono::high_resolution_clock::now();
     emit_progress("keygen", 1, 1);
     if (pk.empty() || sk.empty())
-      return skip("custom keygen failed for " + alg_name);
+      return fail("custom keygen failed for " + alg_name);
     write_file(pk_file, pk);
     write_file(sk_file, sk);
     std::cout << (double)(std::chrono::duration_cast<std::chrono::microseconds>(
@@ -340,7 +353,7 @@ int benchmark_custom(const std::string &alg_name, int mode, int iterations,
     for (int i = 0; i < iterations; i++) {
       signature = scheme->sign(msg, sk);
       if (signature.empty())
-        return skip("custom sign failed for " + alg_name);
+        return fail("custom sign failed for " + alg_name);
       emit_progress("sign", i + 1, iterations);
     }
     auto end = std::chrono::high_resolution_clock::now();
@@ -357,7 +370,7 @@ int benchmark_custom(const std::string &alg_name, int mode, int iterations,
     auto start = std::chrono::high_resolution_clock::now();
     for (int i = 0; i < iterations; i++) {
       if (!scheme->verify(msg, signature, pk))
-        return skip("custom verify failed for " + alg_name);
+        return fail("custom verify failed for " + alg_name);
       emit_progress("verify", i + 1, iterations);
     }
     auto end = std::chrono::high_resolution_clock::now();
@@ -408,12 +421,20 @@ static int print_list() {
 }
 
 int main(int argc, char *argv[]) {
+  if (argc >= 7 && argv[6][0] != '\0') {
+#ifdef _WIN32
+    _putenv_s("HBS_THREADS", argv[6]);
+#else
+    setenv("HBS_THREADS", argv[6], 1);
+#endif
+  }
+
   if (argc >= 2 && std::string(argv[1]) == "--list")
     return print_list();
 
   if (argc < 6) {
     std::cerr
-        << "usage: benchmark <alg> <type> <mode> <iterations> <baseline>\n"
+        << "usage: benchmark <alg> <type> <mode> <iterations> <baseline> [threads]\n"
         << "       benchmark --list\n";
     return 3;
   }

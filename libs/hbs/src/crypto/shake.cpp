@@ -1,6 +1,15 @@
 #include "crypto/shake.h"
 #include <stdexcept>
 
+/* SHAKE256 backend, picked at compile time:
+   1. OpenSSL EVP_shake256 when the library was built with PQC_HAS_OPENSSL
+      (fastest, preferred).
+   2. The bundled scalar Keccak below.
+   OpenMP is not a third hash. When the compiler enables it, WOTS chains and
+   Merkle leaves run in parallel on top of whichever backend this file
+   selected. With neither OpenSSL nor OpenMP the same code is single-threaded
+   Keccak. */
+
 #ifdef PQC_HAS_OPENSSL
 
 Shake256::Shake256() {

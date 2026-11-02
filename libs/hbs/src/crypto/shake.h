@@ -10,7 +10,9 @@
 #endif
 
 /* Incremental SHAKE256. OpenSSL EVP_shake256 when PQC_HAS_OPENSSL, else scalar
- * Keccak. */
+ * Keccak.
+ * A Shake256 is not safe to copy from several threads at once. Each worker
+ * keeps its own instance (see wots.cpp / merkle.cpp). */
 class Shake256 {
 #ifdef PQC_HAS_OPENSSL
   EVP_MD_CTX *ctx_ = nullptr;

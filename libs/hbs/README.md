@@ -29,8 +29,32 @@ make -C ../.. test    # or: see top-level Makefile
 `tests/test_hbs` checks:
 
 1. SHAKE256 against NIST / hashlib vectors
-2. SPHINCS+-SHAKE-128f-simple known-answer test generated from the official
+2. SPHINCS+-SHAKE simple known-answer tests against the official
    [sphincsplus](https://github.com/sphincs/sphincsplus) reference
-   (`THASH=simple`), including a byte-for-byte signature match with
-   `optrand = PK.seed`
-3. keygen/sign/verify roundtrips for the 128f/192f/256f parameter sets
+   (`THASH=simple`). Signatures match byte for byte with `optrand = PK.seed`
+   for 128f, 128s, 192f and 256f. Public keys match for 192s and 256s.
+   A 128f signature produced with `optrand = 0xA5…` must still verify.
+3. keygen/sign/verify roundtrips for the 128f parameter set
+
+## Threads and hash backend
+
+The hash and the parallelism are chosen independently, and both are optional:
+
+1. **SHAKE256** — OpenSSL `EVP_shake256` if the library was built with
+   OpenSSL (`PQC_HAS_OPENSSL`). Otherwise the bundled scalar Keccak in
+   `src/crypto`. Results are the same either way.
+2. **OpenMP** — if the compiler enables it, WOTS chains and Merkle leaves
+   run in parallel on top of that hash. Without OpenMP the same loops are
+   single-threaded.
+
+By default the OpenMP team does **not** grab every logical CPU (that pinned
+machines at about 99%, and hyperthreads barely help Keccak). The default is
+the number of physical cores, or one less when the CPU has no SMT, so a core
+stays free for the OS and the GUI. Override it with:
+
+* `HBS_THREADS=4` — use exactly 4 threads
+* `HBS_THREADS=all` — every logical CPU (the old full-speed behaviour)
+* `OMP_NUM_THREADS` — honored when `HBS_THREADS` is not set
+
+The desktop window has a Threads box. `0` means this default. A positive
+number is also exported as `OMP_NUM_THREADS` so liboqs is capped the same way.

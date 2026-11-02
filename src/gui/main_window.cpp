@@ -14,6 +14,8 @@
 #include <QListWidget>
 #include <QMessageBox>
 #include <QPlainTextEdit>
+#include <QProcess>
+#include <QProcessEnvironment>
 #include <QProgressBar>
 #include <QPushButton>
 #include <QSpinBox>
@@ -62,12 +64,22 @@ void MainWindow::buildUi() {
   itersBox_->setRange(1, 100000);
   itersBox_->setValue(8);
 
+  threadsBox_ = new QSpinBox(catalog);
+  threadsBox_->setRange(0, 256);
+  threadsBox_->setValue(0);
+  threadsBox_->setSpecialValueText("auto");
+  threadsBox_->setToolTip(
+      "Threads for hashing. Auto keeps a core free (physical cores, not every "
+      "hyperthread) so the machine does not sit at 99%. A number also caps "
+      "liboqs via OMP_NUM_THREADS. HBS_THREADS=all is the old full-speed mode.");
+
   addBtn_ = new QPushButton("Add to queue", catalog);
   connect(addBtn_, &QPushButton::clicked, this, &MainWindow::addToQueue);
 
   catLay->addRow("Type", typeBox_);
   catLay->addRow("Scheme", schemeList_);
   catLay->addRow("Iterations", itersBox_);
+  catLay->addRow("Threads", threadsBox_);
   catLay->addRow(addBtn_);
   leftLay->addWidget(catalog);
 
@@ -118,10 +130,10 @@ void MainWindow::buildUi() {
 
   auto *resBox = new QGroupBox("Results", right);
   auto *rLay = new QVBoxLayout(resBox);
-  resultTable_ = new QTableWidget(0, 10, resBox);
+  resultTable_ = new QTableWidget(0, 11, resBox);
   resultTable_->setHorizontalHeaderLabels(
       {"Algorithm", "Status", "PK", "SK", "Sig", "Keygen us", "Sign us",
-       "Verify us", "Keygen KB", "Sign KB"});
+       "Verify us", "Keygen KB", "Sign KB", "Verify KB"});
   resultTable_->horizontalHeader()->setStretchLastSection(true);
   resultTable_->setEditTriggers(QAbstractItemView::NoEditTriggers);
   rLay->addWidget(resultTable_);
@@ -306,6 +318,7 @@ void MainWindow::setBusy(bool busy) {
   typeBox_->setEnabled(!busy);
   schemeList_->setEnabled(!busy);
   itersBox_->setEnabled(!busy);
+  threadsBox_->setEnabled(!busy);
   cancelBtn_->setEnabled(busy);
 }
 
@@ -357,7 +370,19 @@ void MainWindow::startWorker(const QStringList &args) {
   stdoutBuf_.clear();
   stderrBuf_.clear();
   lastStdout_.clear();
-  proc_->start(workerPath(), args);
+  QProcessEnvironment env = QProcessEnvironment::systemEnvironment();
+  if (!env.contains("OMP_WAIT_POLICY"))
+    env.insert("OMP_WAIT_POLICY", "PASSIVE");
+  QStringList full = args;
+  if (threadsBox_ && threadsBox_->value() > 0) {
+    const QString n = QString::number(threadsBox_->value());
+    env.insert("HBS_THREADS", n);
+    env.insert("OMP_NUM_THREADS", n);
+    env.insert("OMP_DYNAMIC", "FALSE");
+    full << n;
+  }
+  proc_->setProcessEnvironment(env);
+  proc_->start(workerPath(), full);
 }
 
 void MainWindow::onWorkerStdout() {
@@ -390,7 +415,20 @@ void MainWindow::onWorkerStderr() {
 }
 
 void MainWindow::onWorkerFinished(int code, QProcess::ExitStatus st) {
+  if (!stderrBuf_.isEmpty()) {
+    stderrBuf_ += '\n';
+    onWorkerStderr();
+  }
   lastStdout_ = stdoutBuf_.trimmed();
+  if (cancel_) {
+    current_.status = "cancelled";
+    finishCurrentRow();
+    setBusy(false);
+    phaseLabel_->setText("Cancelled");
+    bar_->setRange(0, 1);
+    bar_->setValue(0);
+    return;
+  }
   const bool skipped = lastStdout_.startsWith("SKIP") || code == 2;
   const bool failed = st != QProcess::NormalExit || (code != 0 && !skipped);
 
@@ -470,9 +508,10 @@ void MainWindow::finishCurrentRow() {
   const int row = resultTable_->rowCount();
   resultTable_->insertRow(row);
   const QStringList cells = {
-      current_.name,      current_.status,   current_.pk,     current_.sk,
-      current_.sig,       current_.keygenUs, current_.signUs, current_.verifyUs,
-      current_.keygenMem, current_.signMem};
+      current_.name,      current_.status,    current_.pk,
+      current_.sk,        current_.sig,       current_.keygenUs,
+      current_.signUs,    current_.verifyUs,  current_.keygenMem,
+      current_.signMem,   current_.verifyMem};
   for (int i = 0; i < cells.size(); ++i)
     resultTable_->setItem(row, i, new QTableWidgetItem(cells[i]));
 }
@@ -491,11 +530,12 @@ void MainWindow::exportCsv() {
   }
   f.write("Algorithm,Status,PK Size (B),SK Size (B),Sig Size (B),Keygen Time "
           "(us),Sign Time (us),Verify Time (us),Keygen Peak Mem (KB),Sign Peak "
-          "Mem (KB)\n");
+          "Mem (KB),Verify Peak Mem (KB)\n");
   for (const auto &r : results_) {
     const QString line =
-        QStringList{r.name,     r.status, r.pk,       r.sk,        r.sig,
-                    r.keygenUs, r.signUs, r.verifyUs, r.keygenMem, r.signMem}
+        QStringList{r.name,     r.status,    r.pk,        r.sk,
+                    r.sig,      r.keygenUs,  r.signUs,    r.verifyUs,
+                    r.keygenMem, r.signMem,  r.verifyMem}
             .join(',') +
         "\n";
     f.write(line.toUtf8());

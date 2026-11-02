@@ -76,6 +76,7 @@ private:
   QComboBox *typeBox_ = nullptr;
   QListWidget *schemeList_ = nullptr;
   QSpinBox *itersBox_ = nullptr;
+  QSpinBox *threadsBox_ = nullptr;
   QPushButton *addBtn_ = nullptr;
   QPushButton *removeBtn_ = nullptr;
   QPushButton *runBtn_ = nullptr;

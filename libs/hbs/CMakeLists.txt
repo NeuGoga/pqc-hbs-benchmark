@@ -5,6 +5,7 @@ add_library(hbs
     src/crypto/shake.cpp
     src/crypto/rng.cpp
     src/crypto/utils.cpp
+    src/crypto/threads.cpp
     src/sphincs/address.cpp
     src/sphincs/params.cpp
     src/sphincs/hash.cpp
@@ -63,5 +64,5 @@ if(OpenMP_CXX_FOUND)
     target_link_libraries(hbs PUBLIC OpenMP::OpenMP_CXX)
     message(STATUS "libhbs: OpenMP enabled")
 else()
-    message(STATUS "libhbs: OpenMP not found — single-thread hashes")
+    message(STATUS "libhbs: OpenMP not found — the same loops run on one thread")
 endif()
